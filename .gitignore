@@ -1,0 +1,17 @@
+# AI conversation logs (ai-logging skill) — local history, not for the repo
+ai-logging/*conversation*.md
+ai-logging/*conversation*.md.bak*
+*.bak-*
+
+# Claude Code local settings (per-machine hooks/permissions)
+.claude/settings.local.json
+
+# Claude Flow local runtime state (session metrics, edit-tracking — machine-local)
+.claude-flow/
+
+# Assignment source screenshots (transcribed into assignment_description.md)
+Screenshot*.png
+
+# Python bytecode cache
+__pycache__/
+*.pyc
