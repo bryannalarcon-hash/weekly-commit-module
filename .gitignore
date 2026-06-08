@@ -12,6 +12,9 @@ ai-logging/*conversation*.md.bak*
 # Assignment source screenshots (transcribed into assignment_description.md)
 Screenshot*.png
 
+# Assignment brief — kept local, not published to the repo
+assignment_description.md
+
 # Python bytecode cache
 __pycache__/
 *.pyc
