@@ -2,7 +2,7 @@
    loads IBM Plex (Google Fonts), declares EVERY design token as a :root CSS custom property (the same
    OKLCH values mirrored from theme.colors.mjs), defines the motion keyframes (with a prefers-reduced-
    motion collapse), and ships the small token-mapped utility classes (.kicker .tnum .lift .float-orb
-   .badge-pop .live-pulse .bar-grow .sk, the .btn-*/.input family, the structural helpers .panel
+   .badge-pop .live-pulse .bar-grow .sk, the .btn-(primary|ghost|quiet|danger) and .input family, the structural helpers .panel
    /.between/.wrap/.grip, and the WCM remote-shell classes .wc/.wc-subnav/.wc-tab/.wc-divider
    /.wc-content/.page used by WcShell). Imported once by the remote entry (apps/wc-remote/src/index.css)
    so Tailwind utilities + these tokens compose. Component files use the var/class names verbatim; do
