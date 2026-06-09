@@ -1,117 +1,145 @@
-// libs/ui/src/RcdoChip.tsx — the RCDO link as a first-class element (design brief §4.2).
-// Renders the linked Supporting Outcome as a chip and, optionally, its full 4-level breadcrumb
-// (Rally Cry › Defining Objective › Outcome › Supporting Outcome) with truncation + native tooltip.
-// Also exports RcdoBreadcrumb (standalone) and an "unlinked" affordance that visibly blocks submit.
+// libs/ui/src/RcdoChip.tsx — the RCDO strategy link as a first-class element (brief §4.2), re-skinned
+// to the WCM design (prototype/wcm/ui.jsx RcdoChip). LINKED: a green pill (signal-dim fill, link icon,
+// truncated Supporting Outcome title) — the optional full ladder shows beneath via RcdoBreadcrumb.
+// UNLINKED: an AMBER DASHED "Link a Supporting Outcome" affordance (alert icon + text, never color-only)
+// that visibly reads as incomplete so it blocks lock. Backward-compatible props (title/path/onClear) so
+// the existing screens keep working; preserves data-testid=rcdo-chip / rcdo-chip-unlinked. Re-exports
+// RcdoBreadcrumb + RcdoPath from ./RcdoBreadcrumb so '@wcm/ui' callers importing them stay unchanged.
 import type { ReactNode } from 'react';
-import { ChevronRightIcon, WarningIcon, XMarkIcon } from './icons';
-
-/** A path of human-readable titles, root → leaf. The leaf is the Supporting Outcome. */
-export interface RcdoPath {
-  rallyCry: string;
-  definingObjective: string;
-  outcome: string;
-  supportingOutcome: string;
-}
-
-export interface RcdoBreadcrumbProps {
-  path: RcdoPath;
-  /** Truncate each crumb to this many chars (full text stays in the title tooltip). */
-  className?: string;
-}
-
-const crumbs = (path: RcdoPath): string[] => [
-  path.rallyCry,
-  path.definingObjective,
-  path.outcome,
-  path.supportingOutcome,
-];
-
-/** The full Rally Cry › … › Supporting Outcome trail, with chevron separators + a tooltip. */
-export function RcdoBreadcrumb({ path, className }: RcdoBreadcrumbProps): JSX.Element {
-  const trail = crumbs(path);
-  const full = trail.join(' › ');
-  return (
-    <nav
-      aria-label="Strategy path"
-      title={full}
-      data-testid="rcdo-breadcrumb"
-      className={`flex min-w-0 items-center gap-1 text-xs text-slate-500 ${className ?? ''}`.trim()}
-    >
-      {trail.map((label, i) => (
-        <span key={`${label}-${i}`} className="flex min-w-0 items-center gap-1">
-          {i > 0 && <ChevronRightIcon className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />}
-          <span
-            className={
-              i === trail.length - 1
-                ? 'truncate font-medium text-slate-700'
-                : 'truncate'
-            }
-          >
-            {label}
-          </span>
-        </span>
-      ))}
-    </nav>
-  );
-}
+import { Icon } from './icons';
+import { RcdoBreadcrumb } from './RcdoBreadcrumb';
+import type { RcdoPath } from './RcdoBreadcrumb';
 
 export interface RcdoChipProps {
-  /** Title of the linked Supporting Outcome (required when linked). */
+  /** Title of the linked Supporting Outcome; null/undefined renders the unlinked affordance. */
   title?: string | null;
-  /** Optional full breadcrumb; when present, shown under the chip. */
+  /** Optional full ladder; when present, shown under the linked chip. */
   path?: RcdoPath | null;
   /** Fired when the user clears the link (omit to hide the clear affordance). */
   onClear?: () => void;
+  /** Fired when the chip itself is activated (e.g. open the picker). */
+  onClick?: () => void;
   className?: string;
 }
 
-function Pill({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700 ring-1 ring-inset ring-accent-200">
-      {children}
-    </span>
-  );
-}
-
 /**
- * Shows the linked Supporting Outcome. When NOT linked, renders a visible "Needs a Supporting
- * Outcome" warning (text + icon, not color-only) so an unlinked item reads as incomplete (brief §4.2).
+ * Shows the linked Supporting Outcome as a green chip. When NOT linked, renders the amber dashed
+ * "Link a Supporting Outcome" affordance (text + icon, not color-only) so an unlinked item reads as
+ * incomplete (brief §4.2). When linked, the chip is a button only if `onClick`/`onClear` are provided.
  */
-export function RcdoChip({ title, path, onClear, className }: RcdoChipProps): JSX.Element {
+export function RcdoChip({
+  title,
+  path,
+  onClear,
+  onClick,
+  className,
+}: RcdoChipProps): JSX.Element {
   if (!title) {
     return (
-      <span
+      <button
+        type="button"
+        onClick={onClick}
         data-testid="rcdo-chip-unlinked"
-        className={`inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200 ${className ?? ''}`.trim()}
+        className={className}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 10px',
+          borderRadius: 'var(--r-pill)',
+          border: '1px dashed var(--amber)',
+          background: 'var(--amber-dim)',
+          color: 'var(--amber)',
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: onClick ? 'pointer' : 'default',
+          maxWidth: '100%',
+          whiteSpace: 'nowrap',
+          fontFamily: 'var(--sans)',
+        }}
       >
-        <WarningIcon className="h-3.5 w-3.5" aria-hidden />
-        Needs a Supporting Outcome
-      </span>
+        <Icon.alert size={13} aria-hidden />
+        Link a Supporting Outcome
+      </button>
     );
   }
   return (
     <span
       data-testid="rcdo-chip"
-      className={`inline-flex min-w-0 flex-col gap-0.5 ${className ?? ''}`.trim()}
+      className={className}
+      style={{ display: 'inline-flex', minWidth: 0, flexDirection: 'column', gap: 4 }}
     >
-      <span className="flex min-w-0 items-center gap-1">
-        <Pill>
-          <span className="truncate" title={title}>
-            {title}
-          </span>
-          {onClear && (
-            <button
-              type="button"
-              onClick={onClear}
-              aria-label={`Clear link to ${title}`}
-              className="ml-0.5 rounded-full p-0.5 text-accent-600 hover:bg-accent-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
-            >
-              <XMarkIcon className="h-3 w-3" aria-hidden />
-            </button>
-          )}
-        </Pill>
-      </span>
-      {path && <RcdoBreadcrumb path={path} />}
+      <ChipButton title={title} onClick={onClick}>
+        <Icon.link size={12} aria-hidden />
+        <span
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          title={title}
+        >
+          {title}
+        </span>
+        {onClear && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClear();
+            }}
+            aria-label={`Clear link to ${title}`}
+            style={{
+              display: 'inline-flex',
+              marginLeft: 2,
+              padding: 1,
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--signal-deep)',
+              cursor: 'pointer',
+              borderRadius: 'var(--r-pill)',
+            }}
+          >
+            <Icon.x size={11} aria-hidden />
+          </button>
+        )}
+      </ChipButton>
+      {path && <RcdoBreadcrumb path={path} compact />}
+    </span>
+  );
+}
+
+/** The green linked-chip shell (a button when activatable, an inert span otherwise). */
+function ChipButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick?: () => void;
+  children: ReactNode;
+}): JSX.Element {
+  const style = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 10px',
+    borderRadius: 'var(--r-pill)',
+    border: '1px solid color-mix(in oklch, var(--signal) 30%, var(--line))',
+    background: 'var(--signal-dim)',
+    color: 'var(--signal-deep)',
+    fontSize: 12,
+    fontWeight: 600,
+    maxWidth: '100%',
+    minWidth: 0,
+    fontFamily: 'var(--sans)',
+  } as const;
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={title} style={{ ...style, cursor: 'pointer' }}>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <span title={title} style={style}>
+      {children}
     </span>
   );
 }

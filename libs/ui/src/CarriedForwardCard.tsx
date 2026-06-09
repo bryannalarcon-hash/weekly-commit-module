@@ -1,9 +1,11 @@
-// libs/ui/src/CarriedForwardCard.tsx — surfaces an item brought from last week with its lineage
-// ("Carried from last week"), per brief §6.2/§6.3. Distinct treatment + forward icon (text, not
-// color-only). Optional per-item actions (mark complete / carry forward / drop) render as children.
+// libs/ui/src/CarriedForwardCard.tsx — surfaces an item brought from a prior week with its lineage
+// ("Carried from last week"), per brief §6.2/§6.3, restyled to the OKLCH token system. Distinct violet
+// "carry" treatment: a left rail + a carry-icon lineage pill (text, never color-only). Optional per-item
+// actions (mark complete / carry forward / drop) render in the footer. testid "carried-block" is what
+// the My-Week carried section queries; the chess tier renders human-readable (never the raw enum).
 import type { ReactNode } from 'react';
 import type { ChessTier } from '@wcm/types';
-import { ForwardIcon } from './icons';
+import { Icon } from './icons';
 import { CHESS_LABEL } from './tokens';
 
 export interface CarriedForwardCardProps {
@@ -27,24 +29,55 @@ export function CarriedForwardCard({
 }: CarriedForwardCardProps): JSX.Element {
   return (
     <article
-      data-testid="carried-forward-card"
-      className={`rounded border-l-4 border-accent-400 bg-accent-50/60 px-4 py-3 ${className ?? ''}`.trim()}
+      data-testid="carried-block"
+      className={`panel ${className ?? ''}`.trim()}
+      style={{ padding: '13px 15px', borderLeft: '3px solid var(--violet)' }}
     >
-      <div className="flex items-start gap-2">
-        <ForwardIcon className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-xs font-medium text-accent-700">
-            {lineageLabel}
-            {chessTier && (
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
-                {CHESS_LABEL[chessTier]}
-              </span>
-            )}
-          </p>
-          <p className="mt-0.5 break-words text-sm text-slate-800">{text}</p>
-          {actions && <div className="mt-2 flex flex-wrap gap-2">{actions}</div>}
+      <span
+        className="inline-flex items-center"
+        style={{
+          gap: 5,
+          fontSize: 10.5,
+          fontWeight: 600,
+          color: 'var(--violet)',
+          background: 'var(--violet-dim)',
+          padding: '2px 8px',
+          borderRadius: 'var(--r-pill)',
+        }}
+      >
+        <Icon.carry size={11} /> {lineageLabel}
+        {chessTier && (
+          <span
+            style={{
+              marginLeft: 6,
+              padding: '0 6px',
+              borderRadius: 'var(--r-xs)',
+              background: 'var(--surface-2)',
+              color: 'var(--ink-mid)',
+              fontWeight: 700,
+            }}
+          >
+            {CHESS_LABEL[chessTier]}
+          </span>
+        )}
+      </span>
+      <p
+        style={{
+          margin: '8px 0 0',
+          fontSize: 14.5,
+          fontWeight: 600,
+          lineHeight: 1.35,
+          color: 'var(--ink)',
+          wordBreak: 'break-word',
+        }}
+      >
+        {text}
+      </p>
+      {actions && (
+        <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+          {actions}
         </div>
-      </div>
+      )}
     </article>
   );
 }

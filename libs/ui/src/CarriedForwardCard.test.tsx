@@ -7,14 +7,14 @@ import { CarriedForwardCard } from './CarriedForwardCard';
 describe('CarriedForwardCard', () => {
   it('shows the item text and default lineage', () => {
     render(<CarriedForwardCard text="Finish the migration plan" />);
-    const card = screen.getByTestId('carried-forward-card');
+    const card = screen.getByTestId('carried-block');
     expect(card).toHaveTextContent('Finish the migration plan');
     expect(card).toHaveTextContent(/carried from last week/i);
   });
 
   it('renders a human-readable chess tier (not the raw enum)', () => {
     render(<CarriedForwardCard text="X" chessTier="QUEEN" />);
-    const card = screen.getByTestId('carried-forward-card');
+    const card = screen.getByTestId('carried-block');
     expect(card).toHaveTextContent('Queen');
     expect(card.textContent).not.toContain('QUEEN');
   });

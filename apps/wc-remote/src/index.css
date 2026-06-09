@@ -1,5 +1,11 @@
 /* apps/wc-remote/src/index.css — Tailwind entrypoint for the standalone remote shell.
-   Pulls in Tailwind's base/components/utilities; Flowbite classes are emitted via tailwind.config.js. */
+   Pulls in Tailwind's base/components/utilities; Flowbite classes are emitted via tailwind.config.js.
+   The WCM design-token foundation (libs/ui/src/styles/global.css — IBM Plex @import, :root OKLCH
+   custom-properties, motion keyframes, .kicker/.tnum/.lift/.btn-* utilities) is imported separately
+   and AFTER this file in main.tsx, so its token-driven base (body background: var(--void)) and
+   .btn-* classes win over Tailwind preflight. Keep the global @import out of this file: the PostCSS
+   pipeline here is tailwindcss + autoprefixer only (no postcss-import), so a CSS @import placed after
+   @tailwind rules would be invalid and dropped. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

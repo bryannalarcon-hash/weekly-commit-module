@@ -1,0 +1,495 @@
+/* libs/ui/src/styles/global.css — the WCM design-token foundation: the single global stylesheet that
+   loads IBM Plex (Google Fonts), declares EVERY design token as a :root CSS custom property (the same
+   OKLCH values mirrored from theme.colors.mjs), defines the motion keyframes (with a prefers-reduced-
+   motion collapse), and ships the small token-mapped utility classes (.kicker .tnum .lift .float-orb
+   .badge-pop .live-pulse .bar-grow .sk, the .btn-*/.input family, the structural helpers .panel
+   /.between/.wrap/.grip, and the WCM remote-shell classes .wc/.wc-subnav/.wc-tab/.wc-divider
+   /.wc-content/.page used by WcShell). Imported once by the remote entry (apps/wc-remote/src/index.css)
+   so Tailwind utilities + these tokens compose. Component files use the var/class names verbatim; do
+   not redefine tokens elsewhere. */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500;600&display=swap');
+
+:root {
+  /* surfaces — muted canvas, brighter floating cards */
+  --void: oklch(0.912 0.017 250);
+  --base: oklch(0.963 0.012 250);
+  --surface-1: oklch(0.996 0.002 250);
+  --surface-2: oklch(0.948 0.012 250);
+  --surface-3: oklch(0.912 0.016 250);
+
+  /* hairlines */
+  --line: oklch(0.882 0.013 250);
+  --line-soft: oklch(0.912 0.012 250);
+  --line-bright: oklch(0.818 0.018 250);
+
+  /* text — deep slate-navy */
+  --ink: oklch(0.258 0.032 260);
+  --ink-mid: oklch(0.430 0.030 260);
+  --ink-low: oklch(0.548 0.026 260);
+  --ink-faint: oklch(0.655 0.020 260);
+
+  /* primary = value-creation green */
+  --signal: oklch(0.548 0.132 165);
+  --signal-dim: oklch(0.928 0.062 165);
+  --signal-deep: oklch(0.440 0.115 165);
+
+  /* status / lifecycle accents (each base + light -dim tint) */
+  --amber: oklch(0.640 0.140 68);
+  --amber-dim: oklch(0.918 0.072 72);
+  --red: oklch(0.560 0.185 25);
+  --red-dim: oklch(0.912 0.072 28);
+  --cyan: oklch(0.535 0.128 244);
+  --cyan-dim: oklch(0.918 0.058 244);
+  --violet: oklch(0.530 0.152 296);
+  --violet-dim: oklch(0.918 0.070 298);
+  --slate: oklch(0.548 0.026 260);
+  --slate-dim: oklch(0.928 0.012 260);
+
+  /* lifecycle semantic aliases (one consistent badge = color + dim per state) */
+  --lc-draft: var(--slate);
+  --lc-draft-dim: var(--slate-dim);
+  --lc-locked: var(--cyan);
+  --lc-locked-dim: var(--cyan-dim);
+  --lc-reconciling: var(--amber);
+  --lc-reconciling-dim: var(--amber-dim);
+  --lc-reconciled: var(--signal);
+  --lc-reconciled-dim: var(--signal-dim);
+  --lc-carry: var(--violet);
+  --lc-carry-dim: var(--violet-dim);
+
+  /* radii */
+  --r-xs: 4px;
+  --r-sm: 7px;
+  --r-md: 11px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* type stacks — IBM Plex */
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --serif: 'IBM Plex Serif', Georgia, serif;
+
+  /* elevation (carry separation, not borders) */
+  --shadow-1: 0 1px 2px oklch(0.30 0.05 260 / 0.06), 0 3px 8px -2px oklch(0.30 0.05 260 / 0.10);
+  --shadow-2: 0 16px 36px -16px oklch(0.28 0.06 260 / 0.28);
+  --shadow-pop: 0 24px 60px -22px oklch(0.24 0.06 260 / 0.42);
+}
+
+/* base reset / page canvas */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--signal);
+  color: #fff;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-bright);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* focus-visible ring = 2px signal, offset 2 (used everywhere keyboard focus lands) */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ── ambient ops background field (fixed, behind content) ── */
+.ops-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 560px at 92% -12%, oklch(0.55 0.132 165 / 0.08), transparent 60%),
+    radial-gradient(1000px 520px at -6% 106%, oklch(0.535 0.128 244 / 0.07), transparent 60%);
+}
+
+/* ── type helpers ── */
+.mono {
+  font-family: var(--mono);
+}
+.serif {
+  font-family: var(--serif);
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+.kicker {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+  font-weight: 500;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  display: inline-block;
+  flex: none;
+}
+
+/* ── motion (all collapse under prefers-reduced-motion) ── */
+@keyframes riseIn {
+  from {
+    transform: translateY(8px);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes floatY {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-26px) scale(1.06);
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -480px 0;
+  }
+  100% {
+    background-position: 480px 0;
+  }
+}
+@keyframes popIn {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes softPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes growW {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── lively helpers ── */
+.lift {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+}
+.float-orb {
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.16;
+  animation: floatY 9s ease-in-out infinite;
+}
+.badge-pop {
+  animation: popIn 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.live-pulse {
+  animation: softPulse 2.4s ease-in-out infinite;
+}
+.bar-grow {
+  transform-origin: left;
+  animation: growW 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* ── skeleton primitive ── */
+.sk {
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--surface-3) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 480px 100%;
+  animation: shimmer 1.3s infinite linear;
+  border-radius: var(--r-xs);
+}
+
+/* ── buttons (token-mapped utility classes) ── */
+.btn {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--r-sm);
+  padding: 9px 15px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition:
+    filter 0.15s,
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+  border: 1px solid transparent;
+  line-height: 1;
+  white-space: nowrap;
+}
+.btn-sm {
+  font-size: 12px;
+  padding: 7px 11px;
+}
+.btn-primary {
+  background: var(--signal);
+  color: #fff;
+  box-shadow: var(--shadow-1);
+}
+.btn-primary:hover {
+  filter: brightness(1.07);
+}
+.btn-primary:disabled {
+  background: var(--surface-3);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn-ghost {
+  background: var(--surface-1);
+  color: var(--ink-mid);
+  border-color: var(--line);
+}
+.btn-ghost:hover {
+  border-color: var(--line-bright);
+  color: var(--ink);
+}
+.btn-quiet {
+  background: transparent;
+  color: var(--ink-mid);
+}
+.btn-quiet:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.btn-danger {
+  background: var(--surface-1);
+  color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 35%, var(--line));
+}
+.btn-danger:hover {
+  background: var(--red-dim);
+}
+
+/* ── input atom (shared text-field treatment) ── */
+.input {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  width: 100%;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-dim);
+}
+.input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* ── structural helpers (mirrored from the design layout.css; token-mapped) ── */
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+}
+.between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wrap {
+  flex-wrap: wrap;
+}
+/* drag-grip handle: subtle by default, brighter on hover (the row owns the cursor:grab) */
+.grip:hover {
+  color: var(--ink-mid);
+}
+
+/* ── WCM remote shell: internal sub-nav + content region (no global chrome) ── */
+.wc {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.wc-subnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: oklch(0.963 0.012 250 / 0.86);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 6px 22px -20px oklch(0.3 0.06 260 / 0.5);
+}
+.wc-subnav-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+  overflow-x: auto; /* horizontal scroll on mobile */
+  scrollbar-width: none;
+}
+.wc-subnav-inner::-webkit-scrollbar {
+  display: none;
+}
+.wc-tab {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-low);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 15px 13px 13px;
+  position: relative;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: color 0.15s;
+}
+.wc-tab:hover {
+  color: var(--ink);
+}
+.wc-tab[aria-current='true'] {
+  color: var(--ink);
+}
+.wc-tab[aria-current='true']::after {
+  content: '';
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: 0;
+  height: 2px;
+  background: var(--signal);
+  border-radius: 2px 2px 0 0;
+}
+.wc-tab .tab-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+}
+.wc-tab.mgr {
+  color: var(--violet);
+}
+.wc-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  margin: 0 6px;
+  flex: none;
+}
+.wc-content {
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 26px;
+  flex: 1;
+}
+/* page transition wrapper — transform-only riseIn so the resting state is always visible */
+.page {
+  animation: riseIn 0.35s ease both;
+}
+.page > * {
+  animation: riseIn 0.42s cubic-bezier(0.2, 0.75, 0.3, 1) both;
+}
+.page > *:nth-child(2) {
+  animation-delay: 0.05s;
+}
+.page > *:nth-child(3) {
+  animation-delay: 0.1s;
+}
+.page > *:nth-child(4) {
+  animation-delay: 0.15s;
+}
+.page > *:nth-child(5) {
+  animation-delay: 0.2s;
+}
+.page > *:nth-child(n + 6) {
+  animation-delay: 0.24s;
+}
+
+@media (max-width: 860px) {
+  .wc-content {
+    padding: 20px 16px 40px;
+  }
+  .wc-subnav-inner {
+    padding: 0 12px;
+  }
+}
+@media (max-width: 640px) {
+  .hide-xs {
+    display: none !important;
+  }
+}

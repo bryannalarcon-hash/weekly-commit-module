@@ -1,140 +1,323 @@
-// libs/ui/src/icons.tsx — tiny inline SVG icon set (Heroicons-style, thin/regular) for WCM primitives.
-// Centralizing them keeps a11y consistent (aria-hidden by default; they pair with text, never stand
-// alone as the only signal) and avoids pulling a full icon dependency into the federated remote.
+// libs/ui/src/icons.tsx — the WCM design inline-SVG icon set (24x24 viewBox, 1.6 stroke, rounded
+// caps/joins) faithfully ported from the design handoff (prototype/wcm/icons.jsx). Exports an `Icon`
+// map keyed by the design's short names (Icon.week, Icon.lock, Icon.carry, …) AND the legacy PascalCase
+// named components (PencilIcon, LockIcon, …) that older primitives import — both render the same paths,
+// so nothing in libs/ui or the screens breaks. Icons are aria-hidden by default: they reinforce a text
+// label, never stand alone as the only signal (a11y rule from the brief).
 import type { SVGProps } from 'react';
 
-type IconProps = SVGProps<SVGSVGElement>;
+/** Props for a single icon. `size` sets both width/height; `sw` overrides the stroke width. */
+export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'fill' | 'stroke'> {
+  size?: number;
+  /** Stroke width (design default 1.6). */
+  sw?: number;
+  /** Fill (design default 'none' — these are stroke icons). */
+  fill?: string;
+}
 
-const base = (props: IconProps): IconProps => ({
-  width: 16,
-  height: 16,
-  viewBox: '0 0 20 20',
-  fill: 'currentColor',
-  'aria-hidden': true,
-  focusable: false,
-  ...props,
-});
+/** Shared stroke-icon frame: 24x24 viewBox, currentColor stroke, rounded caps/joins, aria-hidden. */
+function Frame({
+  size = 18,
+  sw = 1.6,
+  fill = 'none',
+  children,
+  ...rest
+}: IconProps & { children: React.ReactNode }): JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={fill}
+      stroke="currentColor"
+      strokeWidth={sw}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable={false}
+      {...rest}
+    >
+      {children}
+    </svg>
+  );
+}
+
+type IconCmp = (props: IconProps) => JSX.Element;
+
+/**
+ * The design icon set, keyed by short names (mirrors prototype/wcm/icons.jsx exactly). Use
+ * `Icon.lock`, `Icon.carry`, etc. as JSX (`<Icon.lock size={16} />`). Authored with `satisfies` so
+ * each member keeps its precise function-component type (usable as a JSX tag); for DYNAMIC lookups by
+ * a string key (e.g. a lifecycle/state icon name), use `getIcon(name)` instead of bracket-indexing.
+ */
+export const Icon = {
+  week: (p) => (
+    <Frame {...p}>
+      <rect x="3.5" y="5" width="17" height="16" rx="2" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+    </Frame>
+  ),
+  history: (p) => (
+    <Frame {...p}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4h4" />
+      <path d="M12 7.5V12l3 2" />
+    </Frame>
+  ),
+  tree: (p) => (
+    <Frame {...p}>
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <rect x="3" y="17" width="6" height="4" rx="1" />
+      <rect x="15" y="17" width="6" height="4" rx="1" />
+      <path d="M12 7v4M6 17v-2h12v2M12 11v4" />
+    </Frame>
+  ),
+  mgr: (p) => (
+    <Frame {...p}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+      <path d="M16 6.2a3 3 0 0 1 0 5.6M17 14.5a5.2 5.2 0 0 1 3.5 4.5" />
+    </Frame>
+  ),
+  gear: (p) => (
+    <Frame {...p}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 13a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.2A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 13.6a2 2 0 1 1 0-4 1.6 1.6 0 0 0 1.7-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 11 4.6V4a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z" />
+    </Frame>
+  ),
+  check: (p) => (
+    <Frame {...p}>
+      <path d="M5 12.5 10 17 19 7" />
+    </Frame>
+  ),
+  checkCircle: (p) => (
+    <Frame {...p}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M8.5 12.2l2.4 2.3 4.6-4.8" />
+    </Frame>
+  ),
+  clock: (p) => (
+    <Frame {...p}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </Frame>
+  ),
+  lock: (p) => (
+    <Frame {...p}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </Frame>
+  ),
+  unlock: (p) => (
+    <Frame {...p}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 7.5-2" />
+    </Frame>
+  ),
+  pencil: (p) => (
+    <Frame {...p}>
+      <path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z" />
+      <path d="M13.5 6.5l3 3" />
+    </Frame>
+  ),
+  scale: (p) => (
+    <Frame {...p}>
+      <path d="M12 4v16M7 20h10M5 8h14M5 8l-2.5 5a3 3 0 0 0 5 0zM19 8l-2.5 5a3 3 0 0 0 5 0zM12 4l-5 4M12 4l5 4" />
+    </Frame>
+  ),
+  carry: (p) => (
+    <Frame {...p}>
+      <path d="M4 12h13M12 6l6 6-6 6" />
+      <path d="M20 5v14" />
+    </Frame>
+  ),
+  plus: (p) => (
+    <Frame {...p}>
+      <path d="M12 5v14M5 12h14" />
+    </Frame>
+  ),
+  search: (p) => (
+    <Frame {...p}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.2-3.2" />
+    </Frame>
+  ),
+  x: (p) => (
+    <Frame {...p}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Frame>
+  ),
+  chevR: (p) => (
+    <Frame {...p}>
+      <path d="M9 5l7 7-7 7" />
+    </Frame>
+  ),
+  chevD: (p) => (
+    <Frame {...p}>
+      <path d="M6 9l6 6 6-6" />
+    </Frame>
+  ),
+  chevL: (p) => (
+    <Frame {...p}>
+      <path d="M15 5l-7 7 7 7" />
+    </Frame>
+  ),
+  arrowR: (p) => (
+    <Frame {...p}>
+      <path d="M4 12h15M13 6l6 6-6 6" />
+    </Frame>
+  ),
+  grip: (p) => (
+    <Frame {...p}>
+      <circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none" />
+    </Frame>
+  ),
+  trash: (p) => (
+    <Frame {...p}>
+      <path d="M4 7h16M9 7V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v2M6 7l1 13a1.5 1.5 0 0 0 1.5 1.4h7A1.5 1.5 0 0 0 17 20L18 7" />
+    </Frame>
+  ),
+  flag: (p) => (
+    <Frame {...p}>
+      <path d="M6 21V4M6 4h11l-2 4 2 4H6" />
+    </Frame>
+  ),
+  comment: (p) => (
+    <Frame {...p}>
+      <path d="M4 5h16v11H9l-4 3z" />
+      <path d="M8 9.5h8M8 13h5" />
+    </Frame>
+  ),
+  mail: (p) => (
+    <Frame {...p}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3.5 6.5 12 13l8.5-6.5" />
+    </Frame>
+  ),
+  link: (p) => (
+    <Frame {...p}>
+      <path d="M10 14a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.3 1.3" />
+      <path d="M14 10a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.3-1.3" />
+    </Frame>
+  ),
+  alert: (p) => (
+    <Frame {...p}>
+      <path d="M12 4 2.5 20h19z" />
+      <path d="M12 10v4M12 17h.01" />
+    </Frame>
+  ),
+  info: (p) => (
+    <Frame {...p}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5M12 8h.01" />
+    </Frame>
+  ),
+  refresh: (p) => (
+    <Frame {...p}>
+      <path d="M20 11a8 8 0 0 0-14-4.5L3 9M3 5v4h4M4 13a8 8 0 0 0 14 4.5L21 15M21 19v-4h-4" />
+    </Frame>
+  ),
+  filter: (p) => (
+    <Frame {...p}>
+      <path d="M4 5h16l-6 7v6l-4 2v-8z" />
+    </Frame>
+  ),
+  dots: (p) => (
+    <Frame {...p}>
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </Frame>
+  ),
+  sparkle: (p) => (
+    <Frame {...p}>
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+    </Frame>
+  ),
+  target: (p) => (
+    <Frame {...p}>
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="3" />
+    </Frame>
+  ),
+  user: (p) => (
+    <Frame {...p}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Frame>
+  ),
+  external: (p) => (
+    <Frame {...p}>
+      <path d="M14 4h6v6M20 4l-8 8M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+    </Frame>
+  ),
+  sort: (p) => (
+    <Frame {...p}>
+      <path d="M8 4v16M8 20l-3-3M8 4l3 3M16 20V4M16 4l3 3M16 20l-3-3" />
+    </Frame>
+  ),
+  // 'forward' mirrors the carry-forward arrow used by the lifecycle CARRY_FORWARD badge.
+  forward: (p) => (
+    <Frame {...p}>
+      <path d="M4 12h13M12 6l6 6-6 6" />
+      <path d="M20 5v14" />
+    </Frame>
+  ),
+  // 'reconcile' = the cyclic refresh glyph the RECONCILING lifecycle state pairs with.
+  reconcile: (p) => (
+    <Frame {...p}>
+      <path d="M20 11a8 8 0 0 0-14-4.5L3 9M3 5v4h4M4 13a8 8 0 0 0 14 4.5L21 15M21 19v-4h-4" />
+    </Frame>
+  ),
+  // 'spinner' = a generic loading affordance (spins via Tailwind animate-spin).
+  spinner: ({ className, ...p }) => (
+    <Frame {...p} className={`animate-spin ${className ?? ''}`.trim()}>
+      <path d="M12 4a8 8 0 1 0 8 8" />
+    </Frame>
+  ),
+} satisfies Record<string, IconCmp>;
+
+/** Valid icon name (a key of the design set). */
+export type IconName = keyof typeof Icon;
+
+/**
+ * Dynamic icon lookup by string key — for callers that choose an icon at runtime (lifecycle/state
+ * names, etc.). Returns the component or undefined. Use this instead of bracket-indexing `Icon[name]`
+ * so the static `<Icon.x />` members keep their precise JSX-component types.
+ */
+export function getIcon(name: string): IconCmp | undefined {
+  return (Icon as Record<string, IconCmp>)[name];
+}
+
+// ── Legacy PascalCase named exports (kept stable for primitives/tests that import them) ──
 
 /** Pencil — DRAFT / editable. */
-export function PencilIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-8.5 8.5a1 1 0 0 1-.464.263l-3 .857a.5.5 0 0 1-.617-.617l.857-3a1 1 0 0 1 .263-.464l8.5-8.5Z" />
-    </svg>
-  );
-}
-
+export const PencilIcon: IconCmp = (p) => Icon.pencil(p);
 /** Lock — LOCKED / frozen. */
-export function LockIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M10 1a4 4 0 0 0-4 4v2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-1V5a4 4 0 0 0-4-4Zm2 6V5a2 2 0 1 0-4 0v2h4Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
-/** Arrows-cycle — RECONCILING / in progress. */
-export function ReconcileIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M10 3a7 7 0 0 0-6.3 3.95.75.75 0 1 0 1.35.65A5.5 5.5 0 0 1 15.5 10h-2l3 3.5L19.5 10h-2A7 7 0 0 0 10 3Zm-7.5 7 3-3.5L1 10h2a7 7 0 0 0 12.95 3.4.75.75 0 0 0-1.35-.65A5.5 5.5 0 0 1 4.5 10h2Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
+export const LockIcon: IconCmp = (p) => Icon.lock(p);
+/** Cyclic refresh — RECONCILING / in progress. */
+export const ReconcileIcon: IconCmp = (p) => Icon.reconcile(p);
 /** Check-circle — RECONCILED / success / complete. */
-export function CheckCircleIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
+export const CheckCircleIcon: IconCmp = (p) => Icon.checkCircle(p);
 /** Forward-arrow — CARRY_FORWARD. */
-export function ForwardIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M3 10a.75.75 0 0 1 .75-.75h8.69L9.22 6.03a.75.75 0 0 1 1.06-1.06l4.5 4.5a.75.75 0 0 1 0 1.06l-4.5 4.5a.75.75 0 1 1-1.06-1.06l3.22-3.22H3.75A.75.75 0 0 1 3 10Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
+export const ForwardIcon: IconCmp = (p) => Icon.forward(p);
 /** Exclamation-triangle — warning / past-due / blocking. */
-export function WarningIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
+export const WarningIcon: IconCmp = (p) => Icon.alert(p);
 /** Chevron-right — collapsed tree node / breadcrumb separator. */
-export function ChevronRightIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
+export const ChevronRightIcon: IconCmp = (p) => Icon.chevR(p);
 /** Chevron-down — expanded tree node. */
-export function ChevronDownIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path
-        fillRule="evenodd"
-        d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
+export const ChevronDownIcon: IconCmp = (p) => Icon.chevD(p);
 /** Spinner — generic loading affordance. */
-export function SpinnerIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)} className={`animate-spin ${props.className ?? ''}`.trim()}>
-      <path
-        d="M10 3a7 7 0 1 0 7 7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
+export const SpinnerIcon: IconCmp = (p) => Icon.spinner(p);
 /** X-mark — clear / close. */
-export function XMarkIcon(props: IconProps): JSX.Element {
-  return (
-    <svg {...base(props)}>
-      <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-    </svg>
-  );
-}
+export const XMarkIcon: IconCmp = (p) => Icon.x(p);
+/** Link — RCDO linked chip. */
+export const LinkIcon: IconCmp = (p) => Icon.link(p);
+/** Plus — add affordance. */
+export const PlusIcon: IconCmp = (p) => Icon.plus(p);
+/** Refresh — retry. */
+export const RefreshIcon: IconCmp = (p) => Icon.refresh(p);

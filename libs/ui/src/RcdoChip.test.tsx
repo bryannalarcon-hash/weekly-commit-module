@@ -1,11 +1,11 @@
-// libs/ui/src/RcdoChip.test.tsx — proves the RCDO link chip + 4-level breadcrumb render the linked
-// Supporting Outcome, that an UNLINKED item shows a visible text+icon "needs a Supporting Outcome"
-// affordance (not color-only), and that clearing fires onClear.
+// libs/ui/src/RcdoChip.test.tsx — proves the RCDO link chip renders the linked Supporting Outcome (green
+// chip + optional ladder), that an UNLINKED item shows the visible amber "Link a Supporting Outcome"
+// affordance (text+icon, not color-only), that clearing fires onClear, and that activating fires onClick.
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { RcdoBreadcrumb, RcdoChip } from './RcdoChip';
-import type { RcdoPath } from './RcdoChip';
+import { RcdoChip } from './RcdoChip';
+import type { RcdoPath } from './RcdoBreadcrumb';
 
 const PATH: RcdoPath = {
   rallyCry: 'Become the system of record',
@@ -17,15 +17,13 @@ const PATH: RcdoPath = {
 describe('RcdoChip', () => {
   it('renders the linked Supporting Outcome title', () => {
     render(<RcdoChip title="Ingest private-capital statements" />);
-    expect(screen.getByTestId('rcdo-chip')).toHaveTextContent(
-      'Ingest private-capital statements',
-    );
+    expect(screen.getByTestId('rcdo-chip')).toHaveTextContent('Ingest private-capital statements');
   });
 
   it('shows a text+icon unlinked affordance when not linked (never color-only)', () => {
     const { container } = render(<RcdoChip title={null} />);
     const el = screen.getByTestId('rcdo-chip-unlinked');
-    expect(el).toHaveTextContent(/needs a supporting outcome/i);
+    expect(el).toHaveTextContent(/link a supporting outcome/i);
     expect(container.querySelector('svg')).toBeInTheDocument();
   });
 
@@ -36,11 +34,15 @@ describe('RcdoChip', () => {
     expect(onClear).toHaveBeenCalledOnce();
   });
 
-  it('renders the full 4-level breadcrumb root → leaf', () => {
-    render(<RcdoBreadcrumb path={PATH} />);
-    const crumb = screen.getByTestId('rcdo-breadcrumb');
-    expect(crumb).toHaveTextContent('Become the system of record');
-    expect(crumb).toHaveTextContent('Ingest private-capital statements');
-    expect(crumb).toHaveAttribute('title', expect.stringContaining('›'));
+  it('fires onClick when the unlinked affordance is activated', async () => {
+    const onClick = vi.fn();
+    render(<RcdoChip title={null} onClick={onClick} />);
+    await userEvent.click(screen.getByTestId('rcdo-chip-unlinked'));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('renders the ladder beneath the chip when a path is given', () => {
+    render(<RcdoChip title="Ingest private-capital statements" path={PATH} />);
+    expect(screen.getByTestId('rcdo-breadcrumb')).toHaveTextContent('Become the system of record');
   });
 });
