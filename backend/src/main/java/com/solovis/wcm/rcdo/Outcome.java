@@ -1,5 +1,6 @@
 // Outcome — third RCDO level; maps outcome. Child of DefiningObjective
-// (definingObjectiveId NOT NULL), parent of SupportingOutcome. Carries title/description/window.
+// (definingObjectiveId NOT NULL), parent of SupportingOutcome. Carries title/description/window and
+// a nullable ownerId (column owner_id -> member; V9) assignable via the admin edit-tree.
 package com.solovis.wcm.rcdo;
 
 import com.solovis.wcm.common.AbstractAuditingEntity;
@@ -29,6 +30,10 @@ public class Outcome extends AbstractAuditingEntity {
   @Column(name = "defining_objective_id", nullable = false)
   private UUID definingObjectiveId;
 
+  // Nullable owner (member.id); orphan-tolerant per V9 so an owner deletion never blocks edits.
+  @Column(name = "owner_id")
+  private UUID ownerId;
+
   @Column(name = "title", nullable = false, length = 200)
   private String title;
 
@@ -45,12 +50,14 @@ public class Outcome extends AbstractAuditingEntity {
   private Outcome(
       UUID id,
       UUID definingObjectiveId,
+      UUID ownerId,
       String title,
       String description,
       LocalDate startDate,
       LocalDate endDate) {
     this.id = id == null ? UUID.randomUUID() : id;
     this.definingObjectiveId = definingObjectiveId;
+    this.ownerId = ownerId;
     this.title = title;
     this.description = description;
     this.startDate = startDate;

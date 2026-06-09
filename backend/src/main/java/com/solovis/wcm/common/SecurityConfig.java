@@ -3,6 +3,8 @@
 // Graph consent callback (which carries no bearer token and is guarded by a signed `state`
 // instead),
 // gates manager-only routes (rollup, review, reconcile transitions) behind SCOPE_reconcile:commits,
+// gates the admin RCDO edit-tree mutations (POST/PUT/DELETE /api/admin/rcdo/**) behind the
+// SCOPE_admin:rcdo authority (Auth0 "admin:rcdo" permission),
 // and requires a valid JWT everywhere else; bearer auth failures render as 401/403 with an RFC-7807
 // problem+json body (ProblemAuthHandlers), matching the service-layer error shape. Auth0
 // "permissions" are mapped
@@ -43,6 +45,9 @@ public class SecurityConfig {
   /** Auth0 permission required by manager-only routes (mapped to a SCOPE_ authority). */
   public static final String MANAGER_SCOPE = "SCOPE_reconcile:commits";
 
+  /** Auth0 permission required to edit the RCDO strategy tree (mapped to a SCOPE_ authority). */
+  public static final String ADMIN_RCDO_SCOPE = "SCOPE_admin:rcdo";
+
   /** The Auth0 custom claim carrying the user's API permissions (when RBAC is enabled). */
   private static final String PERMISSIONS_CLAIM = "permissions";
 
@@ -75,6 +80,15 @@ public class SecurityConfig {
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconciled")
                     .hasAuthority(MANAGER_SCOPE)
+                    // Admin-only: every RCDO edit-tree mutation (create/update/delete at any
+                    // level).
+                    // GET /api/rcdo/** stays merely authenticated (read of the tree is not gated).
+                    .requestMatchers(HttpMethod.POST, "/api/admin/rcdo/**")
+                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .requestMatchers(HttpMethod.PUT, "/api/admin/rcdo/**")
+                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .requestMatchers(HttpMethod.DELETE, "/api/admin/rcdo/**")
+                    .hasAuthority(ADMIN_RCDO_SCOPE)
                     // Everything else needs a valid token (row-level authz then runs in services).
                     .anyRequest()
                     .authenticated())

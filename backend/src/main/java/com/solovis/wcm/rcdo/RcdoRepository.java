@@ -1,6 +1,8 @@
 // RcdoRepository — single facade over the four RCDO level repositories.
 // Aggregates RallyCry/DefiningObjective/Outcome/SupportingOutcome CRUD and tree-walk helpers so
-// callers (seeder, query service) hold one handle. Delegates; owns no state.
+// callers (seeder, query service, admin edit-tree) hold one handle. Delegates; owns no state.
+// Adds per-level findById + delete (used by the admin CRUD cascade in RcdoAdminService) on top of
+// the existing save + tree-walk helpers.
 package com.solovis.wcm.rcdo;
 
 import java.util.List;
@@ -50,8 +52,40 @@ public class RcdoRepository {
     return rallyCries.findAll();
   }
 
+  // --- Per-level findById (admin CRUD load-then-mutate) ---------------------------------------
+
+  public Optional<RallyCry> findRallyCry(UUID id) {
+    return rallyCries.findById(id);
+  }
+
+  public Optional<DefiningObjective> findObjective(UUID id) {
+    return definingObjectives.findById(id);
+  }
+
+  public Optional<Outcome> findOutcome(UUID id) {
+    return outcomes.findById(id);
+  }
+
   public Optional<SupportingOutcome> findSupportingOutcome(UUID id) {
     return supportingOutcomes.findById(id);
+  }
+
+  // --- Per-level delete (admin cascade deletes children first; see RcdoAdminService) ----------
+
+  public void delete(RallyCry rallyCry) {
+    rallyCries.delete(rallyCry);
+  }
+
+  public void delete(DefiningObjective objective) {
+    definingObjectives.delete(objective);
+  }
+
+  public void delete(Outcome outcome) {
+    outcomes.delete(outcome);
+  }
+
+  public void delete(SupportingOutcome supportingOutcome) {
+    supportingOutcomes.delete(supportingOutcome);
   }
 
   public List<DefiningObjective> findObjectives(UUID rallyCryId) {

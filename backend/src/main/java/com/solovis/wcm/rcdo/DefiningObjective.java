@@ -1,5 +1,6 @@
 // DefiningObjective — second RCDO level; maps defining_objective. Child of RallyCry
-// (rallyCryId NOT NULL), parent of Outcome. Carries title/description/date-window.
+// (rallyCryId NOT NULL), parent of Outcome. Carries title/description/date-window and a nullable
+// ownerId (column owner_id -> member; V9) assignable via the admin edit-tree.
 package com.solovis.wcm.rcdo;
 
 import com.solovis.wcm.common.AbstractAuditingEntity;
@@ -29,6 +30,10 @@ public class DefiningObjective extends AbstractAuditingEntity {
   @Column(name = "rally_cry_id", nullable = false)
   private UUID rallyCryId;
 
+  // Nullable owner (member.id); orphan-tolerant per V9 so an owner deletion never blocks edits.
+  @Column(name = "owner_id")
+  private UUID ownerId;
+
   @Column(name = "title", nullable = false, length = 200)
   private String title;
 
@@ -45,12 +50,14 @@ public class DefiningObjective extends AbstractAuditingEntity {
   private DefiningObjective(
       UUID id,
       UUID rallyCryId,
+      UUID ownerId,
       String title,
       String description,
       LocalDate startDate,
       LocalDate endDate) {
     this.id = id == null ? UUID.randomUUID() : id;
     this.rallyCryId = rallyCryId;
+    this.ownerId = ownerId;
     this.title = title;
     this.description = description;
     this.startDate = startDate;

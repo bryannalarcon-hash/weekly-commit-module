@@ -1,5 +1,6 @@
 // RallyCry — top of the RCDO strategy tree (the annual thematic goal); maps rally_cry.
-// Parent of DefiningObjective. Carries title/description/date-window. Extends
+// Parent of DefiningObjective. Carries title/description/date-window and a nullable ownerId
+// (column owner_id -> member; V9) assignable via the admin edit-tree. Extends
 // AbstractAuditingEntity.
 package com.solovis.wcm.rcdo;
 
@@ -27,6 +28,10 @@ public class RallyCry extends AbstractAuditingEntity {
   @Column(name = "id", nullable = false, updatable = false)
   private UUID id;
 
+  // Nullable owner (member.id); orphan-tolerant per V9 so an owner deletion never blocks edits.
+  @Column(name = "owner_id")
+  private UUID ownerId;
+
   @Column(name = "title", nullable = false, length = 200)
   private String title;
 
@@ -41,8 +46,14 @@ public class RallyCry extends AbstractAuditingEntity {
 
   @Builder
   private RallyCry(
-      UUID id, String title, String description, LocalDate startDate, LocalDate endDate) {
+      UUID id,
+      UUID ownerId,
+      String title,
+      String description,
+      LocalDate startDate,
+      LocalDate endDate) {
     this.id = id == null ? UUID.randomUUID() : id;
+    this.ownerId = ownerId;
     this.title = title;
     this.description = description;
     this.startDate = startDate;

@@ -5,7 +5,11 @@
 // "lena@solovis.test",
 // or by slug, e.g. "lena"). The resolved member's id becomes the auth principal (read back by
 // DebugHeaderCurrentMemberProvider), and MANAGER members are granted SCOPE_reconcile:commits so the
-// SAME manager-only route guards (rollup / review / reconcile transitions) apply as in prod. This
+// SAME manager-only route guards (rollup / review / reconcile transitions) apply as in prod.
+// Additionally, the TOP-LEVEL member (managerId == null, the org-root exec) is granted
+// SCOPE_admin:rcdo so the hermetic E2E/demo can drive the Strategy "Edit tree" as that admin; line
+// managers and ICs do NOT get it, so admin RCDO mutations still 403 for them — mirroring the prod
+// SCOPE_admin:rcdo gate. This
 // is
 // a test-only path — it NEVER ships in prod and is NOT a product fallback. Anonymous (no/unknown
 // header) requests stay unauthenticated → 401/403 exactly as the JWT chain would render them,
@@ -47,6 +51,9 @@ public class E2eSecurityConfig {
   /** Same manager scope the prod chain gates on, granted to seeded MANAGER members. */
   public static final String MANAGER_SCOPE = "SCOPE_reconcile:commits";
 
+  /** Same admin scope the prod chain gates RCDO edits on; granted to the seeded top-level exec. */
+  public static final String ADMIN_RCDO_SCOPE = "SCOPE_admin:rcdo";
+
   @Bean
   public SecurityFilterChain e2eSecurityFilterChain(HttpSecurity http, MemberRepository members)
       throws Exception {
@@ -75,6 +82,13 @@ public class E2eSecurityConfig {
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconciled")
                     .hasAuthority(MANAGER_SCOPE)
+                    // Same admin-only RCDO edit-tree gate as the prod chain (top-level exec only).
+                    .requestMatchers(HttpMethod.POST, "/api/admin/rcdo/**")
+                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .requestMatchers(HttpMethod.PUT, "/api/admin/rcdo/**")
+                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .requestMatchers(HttpMethod.DELETE, "/api/admin/rcdo/**")
+                    .hasAuthority(ADMIN_RCDO_SCOPE)
                     .anyRequest()
                     .authenticated())
         // Same RFC-7807 problem+json bodies on filter-chain denials as the prod chain: an anonymous
@@ -93,7 +107,8 @@ public class E2eSecurityConfig {
   /**
    * Resolves the X-Debug-Member header to a seeded member and authenticates the request as that
    * member. No header (or an unknown value) leaves the request anonymous, so protected routes still
-   * 401/403. MANAGER members carry SCOPE_reconcile:commits, mirroring the prod scope mapping.
+   * 401/403. MANAGER members carry SCOPE_reconcile:commits and the TOP-LEVEL exec additionally
+   * carries SCOPE_admin:rcdo, mirroring the prod scope mapping.
    */
   static final class DebugMemberFilter extends OncePerRequestFilter {
 
@@ -146,9 +161,15 @@ public class E2eSecurityConfig {
     }
 
     private static List<GrantedAuthority> authoritiesFor(Member member) {
-      return member.getRole() == MemberRole.MANAGER
-          ? List.of(new SimpleGrantedAuthority(MANAGER_SCOPE))
-          : List.of();
+      List<GrantedAuthority> authorities = new java.util.ArrayList<>();
+      if (member.getRole() == MemberRole.MANAGER) {
+        authorities.add(new SimpleGrantedAuthority(MANAGER_SCOPE));
+      }
+      // The org-root exec (no manager) is the RCDO edit-tree admin in the hermetic E2E/demo.
+      if (member.isTopLevel()) {
+        authorities.add(new SimpleGrantedAuthority(ADMIN_RCDO_SCOPE));
+      }
+      return List.copyOf(authorities);
     }
 
     @Override
