@@ -239,6 +239,114 @@ export interface OutlookConnectResponse {
   authorizationUrl: string;
 }
 
+// --- Settings DTOs (mirror settings/dto/*) ----------------------------------------------------
+
+/** GET /api/settings/account response (mirrors MemberAccountDto): the acting member's profile. */
+export interface MemberAccountDto {
+  id: string;
+  email: string;
+  displayName: string;
+  timezone: string;
+  /** Whether this member can review reports (manager access) — read-only, server-derived. */
+  canReview: boolean;
+}
+
+/**
+ * Body of PUT /api/settings/account (mirrors UpdateMemberAccountDto). displayName is required
+ * (<=160 chars); timezone is optional/validated server-side (<=63 chars, IANA zone id).
+ */
+export interface UpdateMemberAccountDto {
+  displayName: string;
+  timezone?: string;
+}
+
+/**
+ * GET/PUT /api/settings/notifications shape (mirrors NotificationPreferenceDto): the 5 email
+ * toggles surfaced on the Settings → Notifications panel. Lazy-created with defaults server-side.
+ */
+export interface NotificationPreferenceDto {
+  emailOnLock: boolean;
+  emailOnReview: boolean;
+  emailOnReconciled: boolean;
+  weeklyDigest: boolean;
+  reminderEmails: boolean;
+}
+
+/**
+ * Body of PUT /api/settings/notifications (mirrors UpdateNotificationPreferenceDto). All 5
+ * booleans are required (full replace, not a partial patch).
+ */
+export type UpdateNotificationPreferenceDto = NotificationPreferenceDto;
+
+// --- RCDO admin DTOs (mirror rcdo/dto/*Request|*Response, admin-only CRUD) ---------------------
+
+/**
+ * Shared request fields for every RCDO admin create/update body. title is required (<=200 chars);
+ * description (<=2000), startDate/endDate (ISO date) and ownerId (uuid) are optional. Each child
+ * level adds the parent id (see the per-level Request interfaces below).
+ */
+export interface RcdoNodeRequestBase {
+  title: string;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  ownerId?: string | null;
+}
+
+/**
+ * Shared response fields for every RCDO admin create/update result, plus audit columns. Each child
+ * level adds its parent id (see the per-level Response interfaces below).
+ */
+export interface RcdoNodeResponseBase {
+  id: string;
+  title: string;
+  description: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  ownerId: string | null;
+  createdBy: string | null;
+  createdDate: string | null; // ISO instant
+}
+
+/** Body of POST/PUT /api/admin/rcdo/rally-cries[/{id}] (mirrors RallyCryRequest). Root level: no parent. */
+export type RallyCryRequest = RcdoNodeRequestBase;
+
+/** Result of the RallyCry admin mutations (mirrors RallyCryResponse). */
+export type RallyCryResponse = RcdoNodeResponseBase;
+
+/** Body of POST/PUT /api/admin/rcdo/defining-objectives[/{id}] (mirrors DefiningObjectiveRequest). */
+export interface DefiningObjectiveRequest extends RcdoNodeRequestBase {
+  /** Parent RallyCry id (required on create; carried for placement). */
+  rallyCryId?: string | null;
+}
+
+/** Result of the DefiningObjective admin mutations (mirrors DefiningObjectiveResponse). */
+export interface DefiningObjectiveResponse extends RcdoNodeResponseBase {
+  rallyCryId: string | null;
+}
+
+/** Body of POST/PUT /api/admin/rcdo/outcomes[/{id}] (mirrors OutcomeRequest). */
+export interface OutcomeRequest extends RcdoNodeRequestBase {
+  /** Parent DefiningObjective id (required on create). */
+  definingObjectiveId?: string | null;
+}
+
+/** Result of the Outcome admin mutations (mirrors OutcomeResponse). */
+export interface OutcomeResponse extends RcdoNodeResponseBase {
+  definingObjectiveId: string | null;
+}
+
+/** Body of POST/PUT /api/admin/rcdo/supporting-outcomes[/{id}] (mirrors SupportingOutcomeRequest). */
+export interface SupportingOutcomeRequest extends RcdoNodeRequestBase {
+  /** Parent Outcome id (required on create). */
+  outcomeId?: string | null;
+}
+
+/** Result of the SupportingOutcome admin mutations (mirrors SupportingOutcomeResponse). */
+export interface SupportingOutcomeResponse extends RcdoNodeResponseBase {
+  outcomeId: string | null;
+}
+
 /** RFC-7807 ProblemDetail error body (mirrors the ApiExceptionHandler output). */
 export interface ProblemDetail {
   type: string;

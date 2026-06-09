@@ -1,6 +1,7 @@
 // libs/api/src/tags.ts — the RTK Query cache-tag vocabulary for commitApi (U17). Centralizing the
 // tagTypes + id helpers keeps the providesTags/invalidatesTags graph consistent: a submit invalidates
-// the week list; reconcile/review invalidate the specific commit + its reconciliation view.
+// the week list; reconcile/review invalidate the specific commit + its reconciliation view; RCDO admin
+// mutations invalidate the whole RcdoTree; Settings reads/writes share the Settings account/notifications tags.
 export const TAG_TYPES = [
   'Commit',
   'WeekList',
@@ -12,6 +13,7 @@ export const TAG_TYPES = [
   'ReviewQueue',
   'Pulse',
   'Outlook',
+  'Settings',
 ] as const;
 
 export type WcmTag = (typeof TAG_TYPES)[number];
@@ -44,3 +46,13 @@ export const pulseTag = (commitId: string) =>
 
 /** The acting member's Outlook connection state (single-row). */
 export const outlookTag = () => ({ type: 'Outlook', id: 'SELF' }) as const;
+
+/** The whole RCDO tree (browse + picker); admin CRUD on any node invalidates this single tag. */
+export const rcdoTreeTag = () => ({ type: 'RcdoTree', id: 'TREE' }) as const;
+
+/**
+ * A Settings sub-resource for the acting member: 'account' (profile/timezone) or 'notifications'
+ * (the 5 email toggles). Separate ids so an account write does not refetch notifications and vice versa.
+ */
+export const settingsTag = (which: 'account' | 'notifications') =>
+  ({ type: 'Settings', id: which }) as const;

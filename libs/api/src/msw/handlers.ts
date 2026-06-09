@@ -1,27 +1,43 @@
 // libs/api/msw/handlers.ts — MSW request handlers mirroring the WCM REST contract (U10), so the FE
 // (RTK Query units U17+) can build and test against mocks BEFORE the Spring controllers exist. The
 // endpoints, methods, status codes and JSON shapes mirror the Java controllers 1:1 (see
-// backend/.../{commit,rcdo,review}). A tiny in-memory store backs a create->read->submit round-trip;
-// errors are emitted as RFC-7807 ProblemDetail to match ApiExceptionHandler.
+// backend/.../{commit,rcdo,review,settings}). A tiny in-memory store backs a create->read->submit
+// round-trip, the RCDO admin CRUD (mutates the in-memory tree the browse/picker read), and Settings
+// (account + the 5 notification toggles); errors are emitted as RFC-7807 ProblemDetail to match
+// ApiExceptionHandler.
 import { http, HttpResponse } from 'msw';
 import type {
   CommitDto,
   CommitItemDto,
   CreateCommitRequest,
+  DefiningObjectiveNode,
+  DefiningObjectiveRequest,
+  DefiningObjectiveResponse,
   ItemStatusPatch,
+  MemberAccountDto,
+  NotificationPreferenceDto,
+  OutcomeNode,
+  OutcomeRequest,
+  OutcomeResponse,
   OutlookConnectionDto,
   OutlookSettingsRequest,
   ProblemDetail,
   PulseDto,
   PulseRequest,
   RallyCryNode,
+  RallyCryRequest,
+  RallyCryResponse,
   ReconciliationView,
   ReviewDto,
   ReviewQueueRow,
   ReviewRequest,
   RollupRow,
   SupportingOutcomeDto,
+  SupportingOutcomeRequest,
+  SupportingOutcomeResponse,
   UpdateCommitRequest,
+  UpdateMemberAccountDto,
+  UpdateNotificationPreferenceDto,
   WeekSummary,
 } from '@wcm/types';
 
@@ -46,6 +62,27 @@ let outlook: OutlookConnectionDto = {
   createEventOnLock: true,
 };
 
+/** Default account profile for the acting member (Settings → Account). */
+const defaultAccount = (): MemberAccountDto => ({
+  id: MOCK_MEMBER_ID,
+  email: 'lindsley.alvaro@solovis.com',
+  displayName: 'Lindsley Alvaro',
+  timezone: 'America/Chicago',
+  canReview: true,
+});
+/** Default notification toggles for the acting member (Settings → Notifications). */
+const defaultNotifications = (): NotificationPreferenceDto => ({
+  emailOnLock: true,
+  emailOnReview: true,
+  emailOnReconciled: true,
+  weeklyDigest: true,
+  reminderEmails: false,
+});
+
+/** The acting member's Settings rows (lazy-created defaults, mutated by PUTs). */
+let account: MemberAccountDto = defaultAccount();
+let notifications: NotificationPreferenceDto = defaultNotifications();
+
 export function resetMockDb(): void {
   commits.clear();
   pulses.clear();
@@ -55,6 +92,9 @@ export function resetMockDb(): void {
     lastSyncAt: null,
     createEventOnLock: true,
   };
+  account = defaultAccount();
+  notifications = defaultNotifications();
+  resetRcdoTree();
 }
 
 /** Project a stored commit down to the list/history WeekSummary header. */
@@ -91,35 +131,100 @@ function toItem(req: { text: string; supportingOutcomeId?: string | null; chessT
   };
 }
 
-/** A small fixed RCDO tree for the picker mock. */
-const RCDO_TREE: RallyCryNode[] = [
-  {
-    id: uuid(),
-    title: 'Become the system of record for total-portfolio intelligence.',
-    definingObjectives: [
-      {
-        id: uuid(),
-        title: 'Unify public & private markets in one view',
-        outcomes: [
-          {
-            id: uuid(),
-            title: 'Single source of truth across asset classes',
-            supportingOutcomes: [
-              { id: uuid(), outcomeId: uuid(), title: 'Ingest private-capital statements', ownerId: null },
-              { id: uuid(), outcomeId: uuid(), title: 'Normalize public holdings', ownerId: null },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-];
+/**
+ * A small RCDO tree for the picker/browse mock. MUTABLE so the admin CRUD handlers below can
+ * insert/update/delete nodes and the next GET /rcdo/tree reflects it (mirrors the real tree refetch
+ * the rcdoTreeTag invalidation triggers). Rebuilt on resetMockDb via resetRcdoTree().
+ */
+function seedRcdoTree(): RallyCryNode[] {
+  const outcomeId = uuid();
+  return [
+    {
+      id: uuid(),
+      title: 'Become the system of record for total-portfolio intelligence.',
+      definingObjectives: [
+        {
+          id: uuid(),
+          title: 'Unify public & private markets in one view',
+          outcomes: [
+            {
+              id: outcomeId,
+              title: 'Single source of truth across asset classes',
+              supportingOutcomes: [
+                { id: uuid(), outcomeId, title: 'Ingest private-capital statements', ownerId: null },
+                { id: uuid(), outcomeId, title: 'Normalize public holdings', ownerId: null },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+}
 
-const ALL_LEAVES: SupportingOutcomeDto[] = RCDO_TREE.flatMap((rc) =>
-  rc.definingObjectives.flatMap((dobj) =>
-    dobj.outcomes.flatMap((o) => o.supportingOutcomes),
-  ),
-);
+let rcdoTree: RallyCryNode[] = seedRcdoTree();
+
+function resetRcdoTree(): void {
+  rcdoTree = seedRcdoTree();
+}
+
+/** All SupportingOutcome leaves across the (current, mutable) tree — feeds the typeahead search. */
+function allLeaves(): SupportingOutcomeDto[] {
+  return rcdoTree.flatMap((rc) =>
+    rc.definingObjectives.flatMap((dobj) =>
+      dobj.outcomes.flatMap((o) => o.supportingOutcomes),
+    ),
+  );
+}
+
+/** Today's ISO date — the createdDate stamp for admin-created RCDO nodes. */
+const nowIso = (): string => new Date().toISOString();
+
+/** Common request → response audit-field projection for RCDO admin create/update. */
+function rcdoBase(
+  id: string,
+  req: { title: string; description?: string | null; startDate?: string | null; endDate?: string | null; ownerId?: string | null },
+): {
+  id: string;
+  title: string;
+  description: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  ownerId: string | null;
+  createdBy: string;
+  createdDate: string;
+} {
+  return {
+    id,
+    title: req.title,
+    description: req.description ?? null,
+    startDate: req.startDate ?? null,
+    endDate: req.endDate ?? null,
+    ownerId: req.ownerId ?? null,
+    createdBy: MOCK_MEMBER_ID,
+    createdDate: nowIso(),
+  };
+}
+
+/** Find a DefiningObjective node by id across the tree (for child placement on create). */
+function findObjective(id: string): DefiningObjectiveNode | undefined {
+  for (const rc of rcdoTree) {
+    const found = rc.definingObjectives.find((d) => d.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** Find an Outcome node by id across the tree (for leaf placement on create). */
+function findOutcome(id: string): OutcomeNode | undefined {
+  for (const rc of rcdoTree) {
+    for (const dobj of rc.definingObjectives) {
+      const found = dobj.outcomes.find((o) => o.id === id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
 
 export const handlers = [
   // --- Commits (U11) ---------------------------------------------------------------------------
@@ -254,12 +359,153 @@ export const handlers = [
   }),
 
   // --- RCDO (U12) ------------------------------------------------------------------------------
-  http.get(`${BASE}/rcdo/tree`, () => HttpResponse.json(RCDO_TREE)),
+  http.get(`${BASE}/rcdo/tree`, () => HttpResponse.json(rcdoTree)),
 
   http.get(`${BASE}/rcdo/supporting-outcomes`, ({ request }) => {
     const q = new URL(request.url).searchParams.get('q')?.toLowerCase() ?? '';
-    const filtered = ALL_LEAVES.filter((so) => so.title.toLowerCase().includes(q));
+    const filtered = allLeaves().filter((so) => so.title.toLowerCase().includes(q));
     return HttpResponse.json(filtered);
+  }),
+
+  // --- RCDO admin CRUD (admin only; mutates the in-memory tree the reads above project) ---------
+  // RallyCry (root).
+  http.post(`${BASE}/admin/rcdo/rally-cries`, async ({ request }) => {
+    const req = (await request.json()) as RallyCryRequest;
+    const node: RallyCryNode = { id: uuid(), title: req.title, definingObjectives: [] };
+    rcdoTree.push(node);
+    return HttpResponse.json(rcdoBase(node.id, req) satisfies RallyCryResponse);
+  }),
+  http.put(`${BASE}/admin/rcdo/rally-cries/:id`, async ({ params, request }) => {
+    const id = params.id as string;
+    const node = rcdoTree.find((rc) => rc.id === id);
+    if (!node) return problem(404, 'not_found', 'rally cry not found');
+    const req = (await request.json()) as RallyCryRequest;
+    node.title = req.title;
+    return HttpResponse.json(rcdoBase(id, req) satisfies RallyCryResponse);
+  }),
+  http.delete(`${BASE}/admin/rcdo/rally-cries/:id`, ({ params }) => {
+    const id = params.id as string;
+    const idx = rcdoTree.findIndex((rc) => rc.id === id);
+    if (idx < 0) return problem(404, 'not_found', 'rally cry not found');
+    rcdoTree.splice(idx, 1);
+    return new HttpResponse(null, { status: 200 });
+  }),
+
+  // DefiningObjective (under a RallyCry).
+  http.post(`${BASE}/admin/rcdo/defining-objectives`, async ({ request }) => {
+    const req = (await request.json()) as DefiningObjectiveRequest;
+    const parent = rcdoTree.find((rc) => rc.id === req.rallyCryId);
+    if (!parent) return problem(404, 'not_found', 'parent rally cry not found');
+    const node: DefiningObjectiveNode = { id: uuid(), title: req.title, outcomes: [] };
+    parent.definingObjectives.push(node);
+    return HttpResponse.json({
+      ...rcdoBase(node.id, req),
+      rallyCryId: req.rallyCryId ?? null,
+    } satisfies DefiningObjectiveResponse);
+  }),
+  http.put(`${BASE}/admin/rcdo/defining-objectives/:id`, async ({ params, request }) => {
+    const id = params.id as string;
+    const node = findObjective(id);
+    if (!node) return problem(404, 'not_found', 'defining objective not found');
+    const req = (await request.json()) as DefiningObjectiveRequest;
+    node.title = req.title;
+    return HttpResponse.json({
+      ...rcdoBase(id, req),
+      rallyCryId: req.rallyCryId ?? null,
+    } satisfies DefiningObjectiveResponse);
+  }),
+  http.delete(`${BASE}/admin/rcdo/defining-objectives/:id`, ({ params }) => {
+    const id = params.id as string;
+    for (const rc of rcdoTree) {
+      const idx = rc.definingObjectives.findIndex((d) => d.id === id);
+      if (idx >= 0) {
+        rc.definingObjectives.splice(idx, 1);
+        return new HttpResponse(null, { status: 200 });
+      }
+    }
+    return problem(404, 'not_found', 'defining objective not found');
+  }),
+
+  // Outcome (under a DefiningObjective).
+  http.post(`${BASE}/admin/rcdo/outcomes`, async ({ request }) => {
+    const req = (await request.json()) as OutcomeRequest;
+    const parent = req.definingObjectiveId ? findObjective(req.definingObjectiveId) : undefined;
+    if (!parent) return problem(404, 'not_found', 'parent defining objective not found');
+    const node: OutcomeNode = { id: uuid(), title: req.title, supportingOutcomes: [] };
+    parent.outcomes.push(node);
+    return HttpResponse.json({
+      ...rcdoBase(node.id, req),
+      definingObjectiveId: req.definingObjectiveId ?? null,
+    } satisfies OutcomeResponse);
+  }),
+  http.put(`${BASE}/admin/rcdo/outcomes/:id`, async ({ params, request }) => {
+    const id = params.id as string;
+    const node = findOutcome(id);
+    if (!node) return problem(404, 'not_found', 'outcome not found');
+    const req = (await request.json()) as OutcomeRequest;
+    node.title = req.title;
+    return HttpResponse.json({
+      ...rcdoBase(id, req),
+      definingObjectiveId: req.definingObjectiveId ?? null,
+    } satisfies OutcomeResponse);
+  }),
+  http.delete(`${BASE}/admin/rcdo/outcomes/:id`, ({ params }) => {
+    const id = params.id as string;
+    for (const rc of rcdoTree) {
+      for (const dobj of rc.definingObjectives) {
+        const idx = dobj.outcomes.findIndex((o) => o.id === id);
+        if (idx >= 0) {
+          dobj.outcomes.splice(idx, 1);
+          return new HttpResponse(null, { status: 200 });
+        }
+      }
+    }
+    return problem(404, 'not_found', 'outcome not found');
+  }),
+
+  // SupportingOutcome (leaf, under an Outcome).
+  http.post(`${BASE}/admin/rcdo/supporting-outcomes`, async ({ request }) => {
+    const req = (await request.json()) as SupportingOutcomeRequest;
+    const parent = req.outcomeId ? findOutcome(req.outcomeId) : undefined;
+    if (!parent) return problem(404, 'not_found', 'parent outcome not found');
+    const leaf: SupportingOutcomeDto = {
+      id: uuid(),
+      outcomeId: parent.id,
+      title: req.title,
+      ownerId: req.ownerId ?? null,
+    };
+    parent.supportingOutcomes.push(leaf);
+    return HttpResponse.json({
+      ...rcdoBase(leaf.id, req),
+      outcomeId: parent.id,
+    } satisfies SupportingOutcomeResponse);
+  }),
+  http.put(`${BASE}/admin/rcdo/supporting-outcomes/:id`, async ({ params, request }) => {
+    const id = params.id as string;
+    const leaf = allLeaves().find((so) => so.id === id);
+    if (!leaf) return problem(404, 'not_found', 'supporting outcome not found');
+    const req = (await request.json()) as SupportingOutcomeRequest;
+    leaf.title = req.title;
+    leaf.ownerId = req.ownerId ?? null;
+    return HttpResponse.json({
+      ...rcdoBase(id, req),
+      outcomeId: leaf.outcomeId,
+    } satisfies SupportingOutcomeResponse);
+  }),
+  http.delete(`${BASE}/admin/rcdo/supporting-outcomes/:id`, ({ params }) => {
+    const id = params.id as string;
+    for (const rc of rcdoTree) {
+      for (const dobj of rc.definingObjectives) {
+        for (const o of dobj.outcomes) {
+          const idx = o.supportingOutcomes.findIndex((so) => so.id === id);
+          if (idx >= 0) {
+            o.supportingOutcomes.splice(idx, 1);
+            return new HttpResponse(null, { status: 200 });
+          }
+        }
+      }
+    }
+    return problem(404, 'not_found', 'supporting outcome not found');
   }),
 
   // --- Review + roll-up (U14) ------------------------------------------------------------------
@@ -380,6 +626,28 @@ export const handlers = [
     const req = (await request.json()) as OutlookSettingsRequest;
     outlook = { ...outlook, createEventOnLock: req.createEventOnLock };
     return HttpResponse.json(outlook);
+  }),
+
+  // --- Settings (Account + Notifications) ------------------------------------------------------
+  http.get(`${BASE}/settings/account`, () => HttpResponse.json(account)),
+
+  http.put(`${BASE}/settings/account`, async ({ request }) => {
+    const req = (await request.json()) as UpdateMemberAccountDto;
+    // email/id/canReview are server-owned; only displayName + timezone are editable.
+    account = {
+      ...account,
+      displayName: req.displayName,
+      timezone: req.timezone ?? account.timezone,
+    };
+    return HttpResponse.json(account);
+  }),
+
+  http.get(`${BASE}/settings/notifications`, () => HttpResponse.json(notifications)),
+
+  http.put(`${BASE}/settings/notifications`, async ({ request }) => {
+    // Full replace of all 5 toggles (mirrors the required-all UpdateNotificationPreferenceDto).
+    notifications = (await request.json()) as UpdateNotificationPreferenceDto;
+    return HttpResponse.json(notifications);
   }),
 ];
 

@@ -1,13 +1,21 @@
 // libs/api/src/commitApi.ts — the RTK Query data layer for the WCM (U17): the ONLY way app code talks
-// to the backend (no fetch/axios). Covers every endpoint in libs/types/contract.ts — commits, RCDO,
-// reconciliation, review + roll-up, the My-Week/History week list, weekly Pulse, the manager review
-// queue, and the Outlook (Graph) connection — injects a Bearer token via the injectable tokenProvider,
-// and wires the providesTags/invalidatesTags graph. Generated React hooks feed the screens (U18–U22).
+// to the backend (no fetch/axios). Covers every endpoint in libs/types/contract.ts — commits, RCDO
+// (browse + admin CRUD on rally-cries/objectives/outcomes/supporting-outcomes), reconciliation, review
+// + roll-up, the My-Week/History week list, weekly Pulse, the manager review queue, the Outlook (Graph)
+// connection, and Settings (account profile + the 5 notification toggles) — injects a Bearer token via
+// the injectable tokenProvider, and wires the providesTags/invalidatesTags graph (RCDO mutations bust
+// the tree tag; Settings reads/writes share per-resource tags). Generated React hooks feed the screens.
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type {
   CommitDto,
   CreateCommitRequest,
+  DefiningObjectiveRequest,
+  DefiningObjectiveResponse,
   ItemStatusPatch,
+  MemberAccountDto,
+  NotificationPreferenceDto,
+  OutcomeRequest,
+  OutcomeResponse,
   OutlookConnectionDto,
   OutlookConnectResponse,
   OutlookSettingsRequest,
@@ -15,13 +23,19 @@ import type {
   PulseDto,
   PulseRequest,
   RallyCryNode,
+  RallyCryRequest,
+  RallyCryResponse,
   ReconciliationView,
   ReviewDto,
   ReviewQueueRow,
   ReviewRequest,
   RollupRow,
   SupportingOutcomeDto,
+  SupportingOutcomeRequest,
+  SupportingOutcomeResponse,
   UpdateCommitRequest,
+  UpdateMemberAccountDto,
+  UpdateNotificationPreferenceDto,
   WeekSummary,
 } from '@wcm/types';
 import {
@@ -29,10 +43,12 @@ import {
   commitTag,
   outlookTag,
   pulseTag,
+  rcdoTreeTag,
   reconciliationTag,
   reviewQueueTag,
   reviewTag,
   rollupTag,
+  settingsTag,
   weekListTag,
 } from './tags';
 import { getAccessToken, getDebugMember } from './tokenProvider';
@@ -182,12 +198,108 @@ export const commitApi = createApi({
     // --- RCDO (U12) ----------------------------------------------------------------------------
     getRcdoTree: build.query<RallyCryNode[], void>({
       query: () => '/rcdo/tree',
-      providesTags: ['RcdoTree'],
+      // Structured tag (id 'TREE') so the admin CRUD below can invalidate exactly this read.
+      providesTags: [rcdoTreeTag()],
     }),
 
     searchSupportingOutcomes: build.query<SupportingOutcomeDto[], string>({
       query: (q) => ({ url: '/rcdo/supporting-outcomes', params: { q } }),
       providesTags: ['SupportingOutcome'],
+    }),
+
+    // --- RCDO admin CRUD (admin only; U12 strategy admin) ---------------------------------------
+    // Each create/update/delete on ANY node mutates the shape of GET /rcdo/tree, so every mutation
+    // invalidates the single rcdoTreeTag() — the picker/browse view refetches the whole tree.
+
+    /** Create a top-level RallyCry. */
+    createRallyCry: build.mutation<RallyCryResponse, RallyCryRequest>({
+      query: (body) => ({ url: '/admin/rcdo/rally-cries', method: 'POST', body }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+    /** Update a RallyCry's title/description/window/owner. */
+    updateRallyCry: build.mutation<
+      RallyCryResponse,
+      { id: string; body: RallyCryRequest }
+    >({
+      query: ({ id, body }) => ({ url: `/admin/rcdo/rally-cries/${id}`, method: 'PUT', body }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+    /** Delete a RallyCry and its entire subtree. */
+    deleteRallyCry: build.mutation<void, string>({
+      query: (id) => ({ url: `/admin/rcdo/rally-cries/${id}`, method: 'DELETE' }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+
+    /** Create a DefiningObjective under a RallyCry (rallyCryId in the body). */
+    createDefiningObjective: build.mutation<
+      DefiningObjectiveResponse,
+      DefiningObjectiveRequest
+    >({
+      query: (body) => ({ url: '/admin/rcdo/defining-objectives', method: 'POST', body }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+    /** Update a DefiningObjective's title/description/window/owner. */
+    updateDefiningObjective: build.mutation<
+      DefiningObjectiveResponse,
+      { id: string; body: DefiningObjectiveRequest }
+    >({
+      query: ({ id, body }) => ({
+        url: `/admin/rcdo/defining-objectives/${id}`,
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+    /** Delete a DefiningObjective and its subtree. */
+    deleteDefiningObjective: build.mutation<void, string>({
+      query: (id) => ({ url: `/admin/rcdo/defining-objectives/${id}`, method: 'DELETE' }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+
+    /** Create an Outcome under a DefiningObjective (definingObjectiveId in the body). */
+    createOutcome: build.mutation<OutcomeResponse, OutcomeRequest>({
+      query: (body) => ({ url: '/admin/rcdo/outcomes', method: 'POST', body }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+    /** Update an Outcome's title/description/window/owner. */
+    updateOutcome: build.mutation<
+      OutcomeResponse,
+      { id: string; body: OutcomeRequest }
+    >({
+      query: ({ id, body }) => ({ url: `/admin/rcdo/outcomes/${id}`, method: 'PUT', body }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+    /** Delete an Outcome and its subtree. */
+    deleteOutcome: build.mutation<void, string>({
+      query: (id) => ({ url: `/admin/rcdo/outcomes/${id}`, method: 'DELETE' }),
+      invalidatesTags: [rcdoTreeTag()],
+    }),
+
+    /** Create a SupportingOutcome under an Outcome (outcomeId in the body). */
+    createSupportingOutcome: build.mutation<
+      SupportingOutcomeResponse,
+      SupportingOutcomeRequest
+    >({
+      query: (body) => ({ url: '/admin/rcdo/supporting-outcomes', method: 'POST', body }),
+      // A new leaf shows up in both the tree and the typeahead search results.
+      invalidatesTags: [rcdoTreeTag(), 'SupportingOutcome'],
+    }),
+    /** Update a SupportingOutcome's title/description/window/owner. */
+    updateSupportingOutcome: build.mutation<
+      SupportingOutcomeResponse,
+      { id: string; body: SupportingOutcomeRequest }
+    >({
+      query: ({ id, body }) => ({
+        url: `/admin/rcdo/supporting-outcomes/${id}`,
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: [rcdoTreeTag(), 'SupportingOutcome'],
+    }),
+    /** Delete a SupportingOutcome; 409 if a commit item links it. */
+    deleteSupportingOutcome: build.mutation<void, string>({
+      query: (id) => ({ url: `/admin/rcdo/supporting-outcomes/${id}`, method: 'DELETE' }),
+      invalidatesTags: [rcdoTreeTag(), 'SupportingOutcome'],
     }),
 
     // --- Review + roll-up (U14) ----------------------------------------------------------------
@@ -287,6 +399,34 @@ export const commitApi = createApi({
       }),
       invalidatesTags: [outlookTag()],
     }),
+
+    // --- Settings (Settings screen: Account + Notifications) ------------------------------------
+    /** The acting member's account profile (email/displayName/timezone) + read-only canReview. */
+    getAccount: build.query<MemberAccountDto, void>({
+      query: () => '/settings/account',
+      providesTags: [settingsTag('account')],
+    }),
+
+    /** Update displayName + (validated) timezone; canReview/email/id are server-owned. */
+    updateAccount: build.mutation<MemberAccountDto, UpdateMemberAccountDto>({
+      query: (body) => ({ url: '/settings/account', method: 'PUT', body }),
+      invalidatesTags: [settingsTag('account')],
+    }),
+
+    /** The acting member's 5 email-notification toggles (lazy-created defaults). */
+    getNotifications: build.query<NotificationPreferenceDto, void>({
+      query: () => '/settings/notifications',
+      providesTags: [settingsTag('notifications')],
+    }),
+
+    /** Replace all 5 email-notification toggles. */
+    updateNotifications: build.mutation<
+      NotificationPreferenceDto,
+      UpdateNotificationPreferenceDto
+    >({
+      query: (body) => ({ url: '/settings/notifications', method: 'PUT', body }),
+      invalidatesTags: [settingsTag('notifications')],
+    }),
   }),
 });
 
@@ -306,6 +446,18 @@ export const {
   useGetRcdoTreeQuery,
   useSearchSupportingOutcomesQuery,
   useLazySearchSupportingOutcomesQuery,
+  useCreateRallyCryMutation,
+  useUpdateRallyCryMutation,
+  useDeleteRallyCryMutation,
+  useCreateDefiningObjectiveMutation,
+  useUpdateDefiningObjectiveMutation,
+  useDeleteDefiningObjectiveMutation,
+  useCreateOutcomeMutation,
+  useUpdateOutcomeMutation,
+  useDeleteOutcomeMutation,
+  useCreateSupportingOutcomeMutation,
+  useUpdateSupportingOutcomeMutation,
+  useDeleteSupportingOutcomeMutation,
   useReviewCommitMutation,
   useGetRollupQuery,
   useLazyGetReportLatestCommitQuery,
@@ -316,4 +468,8 @@ export const {
   useConnectOutlookMutation,
   useDisconnectOutlookMutation,
   useUpdateOutlookSettingsMutation,
+  useGetAccountQuery,
+  useUpdateAccountMutation,
+  useGetNotificationsQuery,
+  useUpdateNotificationsMutation,
 } = commitApi;

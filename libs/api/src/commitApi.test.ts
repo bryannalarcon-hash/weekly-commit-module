@@ -2,7 +2,9 @@
 // contract WITHOUT a backend: (1) two identical getCommit reads dedup to ONE network call (cache),
 // (2) submit invalidates the WeekList tag so a subsequent list-style read refetches, (3) reviewCommit
 // invalidates the ReviewQueue tag so a still-subscribed manager queue refetches its reviewState (U21),
-// and (4) the injected token getter attaches a Bearer header. No real Auth0 — the token getter is mocked.
+// (4) the injected token getter attaches a Bearer header, (5) RCDO admin CRUD mutates the tree and the
+// rcdoTreeTag invalidation refetches a subscribed getRcdoTree, and (6) Settings account/notifications
+// round-trip + invalidate their tags. No real Auth0 — the token getter is mocked.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
@@ -243,5 +245,191 @@ describe('commitApi (MSW-backed)', () => {
       commitApi.endpoints.updateOutlookSettings.initiate({ createEventOnLock: false }),
     );
     await store.dispatch(commitApi.endpoints.disconnectOutlook.initiate()).unwrap();
+  });
+
+  it('RCDO admin CRUD mutates the tree and refetches a subscribed getRcdoTree', async () => {
+    const store = makeStore();
+
+    // A live subscription to the tree provides rcdoTreeTag(); mutations must invalidate it.
+    const sub = store.dispatch(commitApi.endpoints.getRcdoTree.initiate());
+    const initial = await sub.unwrap();
+    expect(initial.length).toBe(1);
+
+    // Create a brand-new RallyCry → tree grows to 2 roots after the invalidation refetch.
+    const created = await store
+      .dispatch(
+        commitApi.endpoints.createRallyCry.initiate({
+          title: 'Win the mid-market',
+          description: 'Land 50 logos',
+          startDate: '2026-01-01',
+          endDate: '2026-12-31',
+        }),
+      )
+      .unwrap();
+    expect(created.id).toBeTruthy();
+    expect(created.title).toBe('Win the mid-market');
+    expect(created.createdDate).toBeTruthy();
+
+    await new Promise((r) => setTimeout(r, 50));
+    let tree = commitApi.endpoints.getRcdoTree.select()(store.getState()).data ?? [];
+    expect(tree.length).toBe(2);
+    const newRoot = tree.find((rc) => rc.id === created.id)!;
+    expect(newRoot.title).toBe('Win the mid-market');
+
+    // Add a DefiningObjective under the new RallyCry.
+    const obj = await store
+      .dispatch(
+        commitApi.endpoints.createDefiningObjective.initiate({
+          rallyCryId: created.id,
+          title: 'Ship self-serve onboarding',
+        }),
+      )
+      .unwrap();
+    expect(obj.rallyCryId).toBe(created.id);
+
+    // Add an Outcome under that objective, then a SupportingOutcome leaf under the Outcome.
+    const outcome = await store
+      .dispatch(
+        commitApi.endpoints.createOutcome.initiate({
+          definingObjectiveId: obj.id,
+          title: 'Cut activation time in half',
+        }),
+      )
+      .unwrap();
+    expect(outcome.definingObjectiveId).toBe(obj.id);
+
+    const leaf = await store
+      .dispatch(
+        commitApi.endpoints.createSupportingOutcome.initiate({
+          outcomeId: outcome.id,
+          title: 'Guided product tour',
+          ownerId: null,
+        }),
+      )
+      .unwrap();
+    expect(leaf.outcomeId).toBe(outcome.id);
+
+    // The new leaf is searchable via the typeahead (SupportingOutcome tag also invalidated).
+    const hits = await store
+      .dispatch(commitApi.endpoints.searchSupportingOutcomes.initiate('guided'))
+      .unwrap();
+    expect(hits.some((so) => so.id === leaf.id)).toBe(true);
+
+    // Update then delete the leaf; tree shrinks back.
+    const renamed = await store
+      .dispatch(
+        commitApi.endpoints.updateSupportingOutcome.initiate({
+          id: leaf.id,
+          body: { outcomeId: outcome.id, title: 'Interactive onboarding tour' },
+        }),
+      )
+      .unwrap();
+    expect(renamed.title).toBe('Interactive onboarding tour');
+
+    await store
+      .dispatch(commitApi.endpoints.deleteSupportingOutcome.initiate(leaf.id))
+      .unwrap();
+
+    // Delete the whole new RallyCry subtree → back to a single root after refetch.
+    await store
+      .dispatch(commitApi.endpoints.deleteRallyCry.initiate(created.id))
+      .unwrap();
+    await new Promise((r) => setTimeout(r, 50));
+    tree = commitApi.endpoints.getRcdoTree.select()(store.getState()).data ?? [];
+    expect(tree.length).toBe(1);
+
+    // Exercise the remaining update/delete builders against valid targets so each runs.
+    const baseRoot = tree[0]!;
+    const baseObj = baseRoot.definingObjectives[0]!;
+    const baseOutcome = baseObj.outcomes[0]!;
+    await store
+      .dispatch(
+        commitApi.endpoints.updateRallyCry.initiate({
+          id: baseRoot.id,
+          body: { title: baseRoot.title },
+        }),
+      )
+      .unwrap();
+    await store
+      .dispatch(
+        commitApi.endpoints.updateDefiningObjective.initiate({
+          id: baseObj.id,
+          body: { rallyCryId: baseRoot.id, title: baseObj.title },
+        }),
+      )
+      .unwrap();
+    await store
+      .dispatch(
+        commitApi.endpoints.updateOutcome.initiate({
+          id: baseOutcome.id,
+          body: { definingObjectiveId: baseObj.id, title: baseOutcome.title },
+        }),
+      )
+      .unwrap();
+    await store
+      .dispatch(commitApi.endpoints.deleteOutcome.initiate(baseOutcome.id))
+      .unwrap();
+    await store
+      .dispatch(commitApi.endpoints.deleteDefiningObjective.initiate(baseObj.id))
+      .unwrap();
+
+    sub.unsubscribe();
+  });
+
+  it('Settings account round-trips and updateAccount refetches a subscribed getAccount', async () => {
+    const store = makeStore();
+
+    const sub = store.dispatch(commitApi.endpoints.getAccount.initiate());
+    const before = await sub.unwrap();
+    expect(before.canReview).toBe(true);
+    expect(before.email).toBeTruthy();
+
+    const updated = await store
+      .dispatch(
+        commitApi.endpoints.updateAccount.initiate({
+          displayName: 'Lindsley A.',
+          timezone: 'America/New_York',
+        }),
+      )
+      .unwrap();
+    expect(updated.displayName).toBe('Lindsley A.');
+    expect(updated.timezone).toBe('America/New_York');
+    // email/canReview are server-owned and unchanged by the write.
+    expect(updated.email).toBe(before.email);
+    expect(updated.canReview).toBe(before.canReview);
+
+    // The settingsTag('account') invalidation refetches the still-subscribed getAccount.
+    await new Promise((r) => setTimeout(r, 50));
+    const after = commitApi.endpoints.getAccount.select()(store.getState()).data;
+    expect(after?.displayName).toBe('Lindsley A.');
+    sub.unsubscribe();
+  });
+
+  it('Settings notifications round-trip the 5 toggles and invalidate the tag', async () => {
+    const store = makeStore();
+
+    const sub = store.dispatch(commitApi.endpoints.getNotifications.initiate());
+    const before = await sub.unwrap();
+    // All 5 booleans are present.
+    expect(Object.keys(before).sort()).toEqual(
+      ['emailOnLock', 'emailOnReconciled', 'emailOnReview', 'reminderEmails', 'weeklyDigest'].sort(),
+    );
+
+    const next = {
+      emailOnLock: false,
+      emailOnReview: false,
+      emailOnReconciled: false,
+      weeklyDigest: false,
+      reminderEmails: true,
+    };
+    const updated = await store
+      .dispatch(commitApi.endpoints.updateNotifications.initiate(next))
+      .unwrap();
+    expect(updated).toEqual(next);
+
+    await new Promise((r) => setTimeout(r, 50));
+    const after = commitApi.endpoints.getNotifications.select()(store.getState()).data;
+    expect(after).toEqual(next);
+    sub.unsubscribe();
   });
 });
