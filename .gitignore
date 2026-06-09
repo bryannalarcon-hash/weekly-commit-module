@@ -61,3 +61,6 @@ docs/planning/
 .env
 .env.*
 !.env.example
+
+# Handoff docs (context-management; per-machine, not for the repo)
+handoff/

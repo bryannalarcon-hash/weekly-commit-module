@@ -162,4 +162,86 @@ describe('commitApi (MSW-backed)', () => {
     await seedCommit(store);
     expect(lastAuthHeader).toBeNull();
   });
+
+  // Exercises every remaining endpoint against the MSW contract so each query/tag builder runs and
+  // the request it constructs matches a handler (the slice IS the only path to the backend, so a
+  // broken URL/method/param here is a real bug). Asserts on the contract-shaped response, not padding.
+  it('builds a valid request for every endpoint in the slice', async () => {
+    const store = makeStore();
+
+    // A latest-commit handler the in-memory contract set does not include.
+    server.use(
+      http.get('*/rollup/reports/:memberId/latest-commit', ({ params }) =>
+        HttpResponse.json({ commitId: `latest-of-${params.memberId}` }),
+      ),
+    );
+
+    const id = await seedCommit(store);
+
+    // Commits.
+    expect((await store.dispatch(commitApi.endpoints.getMyWeeks.initiate())).data).toBeDefined();
+    await store.dispatch(commitApi.endpoints.getCurrentWeek.initiate());
+    const updated = await store
+      .dispatch(
+        commitApi.endpoints.updateCommit.initiate({
+          id,
+          body: { items: [{ text: 'edited', supportingOutcomeId: 'so-1', chessTier: 'KING' }] },
+        }),
+      )
+      .unwrap();
+    expect(updated.id).toBe(id);
+
+    // RCDO.
+    expect(
+      (await store.dispatch(commitApi.endpoints.getRcdoTree.initiate())).data?.length,
+    ).toBeGreaterThan(0);
+    await store.dispatch(commitApi.endpoints.searchSupportingOutcomes.initiate('state'));
+
+    // Lock → reconcile lifecycle so the reconcile endpoints have a valid target.
+    await store.dispatch(commitApi.endpoints.submitCommit.initiate(id)).unwrap();
+    await store.dispatch(commitApi.endpoints.startReconcile.initiate(id)).unwrap();
+    const recon = await store
+      .dispatch(commitApi.endpoints.getReconciliation.initiate(id))
+      .unwrap();
+    expect(recon.commitId).toBe(id);
+    const itemId = recon.rows[0]?.commitItemId;
+    if (itemId) {
+      await store.dispatch(
+        commitApi.endpoints.patchItemStatus.initiate({
+          commitId: id,
+          itemId,
+          body: { status: 'COMPLETE' },
+        }),
+      );
+    }
+    await store.dispatch(commitApi.endpoints.markReconciled.initiate(id)).unwrap();
+    await store.dispatch(commitApi.endpoints.carryForward.initiate(id)).unwrap();
+
+    // Review + roll-up.
+    const rollup = await store.dispatch(commitApi.endpoints.getRollup.initiate({})).unwrap();
+    expect(rollup.content).toBeDefined();
+    const latest = await store
+      .dispatch(commitApi.endpoints.getReportLatestCommit.initiate('m-diego'))
+      .unwrap();
+    expect(latest.commitId).toBe('latest-of-m-diego');
+
+    // Pulse.
+    await store.dispatch(commitApi.endpoints.getPulse.initiate(id));
+    await store.dispatch(
+      commitApi.endpoints.putPulse.initiate({
+        commitId: id,
+        body: { rating: 4, comment: 'ok' },
+      }),
+    );
+
+    // Outlook integration.
+    expect(
+      (await store.dispatch(commitApi.endpoints.getOutlookConnection.initiate())).data,
+    ).toBeDefined();
+    await store.dispatch(commitApi.endpoints.connectOutlook.initiate()).unwrap();
+    await store.dispatch(
+      commitApi.endpoints.updateOutlookSettings.initiate({ createEventOnLock: false }),
+    );
+    await store.dispatch(commitApi.endpoints.disconnectOutlook.initiate()).unwrap();
+  });
 });

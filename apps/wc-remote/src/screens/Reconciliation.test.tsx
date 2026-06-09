@@ -76,6 +76,34 @@ describe('Reconciliation', () => {
     await waitFor(() => expect(carry).toHaveBeenCalled());
   });
 
+  it('debounces a per-item actual-status change into a single PATCH', async () => {
+    viewReturns(reconcilingView);
+    const patch = vi.fn(() => HttpResponse.json({}));
+    server.use(http.patch('*/commits/c1/items/i1/status', patch));
+    const user = userEvent.setup();
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    const rows = await screen.findAllByTestId('recon-row');
+    const select = within(rows[0]!).getByTestId('recon-status-select');
+    // Two quick changes coalesce — the debounce keys by itemId so only the last status is sent.
+    await user.selectOptions(select, 'OPEN');
+    await user.selectOptions(select, 'COMPLETE');
+    // The Select reflects the local optimistic choice immediately.
+    expect((select as HTMLSelectElement).value).toBe('COMPLETE');
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+  });
+
+  it('marks the week reconciled while RECONCILING', async () => {
+    viewReturns(reconcilingView);
+    const reconciled = vi.fn(() => HttpResponse.json({}));
+    server.use(http.post('*/commits/c1/reconciled', reconciled));
+    const user = userEvent.setup();
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    await user.click(await screen.findByTestId('mark-reconciled'));
+    await waitFor(() => expect(reconciled).toHaveBeenCalled());
+  });
+
   it('renders a reconciled week read-only (no status select)', async () => {
     viewReturns({
       ...reconcilingView,

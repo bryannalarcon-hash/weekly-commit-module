@@ -3,11 +3,27 @@
 // Auth0 the context is empty-safe (unauthenticated, resolved); and the route guards render the right
 // UX states (loading skeleton, please-sign-in, manager gate). Auth0 is never really called.
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAccessToken } from '@wcm/api';
 import { AuthProvider } from './AuthProvider';
 import { AuthBridge, useWcAuth } from './AuthBridge';
 import { RequireAuth, RequireManager } from './guards';
+
+// Mockable Auth0 hook so the STANDALONE (self-Auth0) branch can be exercised without a live tenant.
+const auth0State = vi.hoisted(() => ({
+  current: {
+    isAuthenticated: false,
+    isLoading: false,
+    user: undefined as Record<string, unknown> | undefined,
+    getAccessTokenSilently: vi.fn(async () => 'auth0-token'),
+    loginWithRedirect: vi.fn(),
+  },
+}));
+vi.mock('@auth0/auth0-react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@auth0/auth0-react')>();
+  return { ...actual, useAuth0: () => auth0State.current };
+});
 
 function Probe(): JSX.Element {
   const { isAuthenticated, isLoading, userName, isManager } = useWcAuth();
@@ -53,6 +69,65 @@ describe('AuthBridge', () => {
     expect(screen.getByTestId('authed')).toHaveTextContent('false');
     expect(screen.getByTestId('loading')).toHaveTextContent('false');
   });
+
+  it('falls back to self-Auth0 standalone: derives manager role + token from the Auth0 user', async () => {
+    auth0State.current = {
+      isAuthenticated: true,
+      isLoading: false,
+      user: { name: 'Standalone Sam', 'https://wcm/roles': ['manager'] },
+      getAccessTokenSilently: vi.fn(async () => 'auth0-token'),
+      loginWithRedirect: vi.fn(),
+    };
+    render(
+      <AuthProvider config={NO_AUTH0}>
+        <AuthBridge>
+          <Probe />
+        </AuthBridge>
+      </AuthProvider>,
+    );
+    expect(screen.getByTestId('authed')).toHaveTextContent('true');
+    expect(screen.getByTestId('name')).toHaveTextContent('Standalone Sam');
+    // isManager derived from the Auth0 roles claim.
+    expect(screen.getByTestId('manager')).toHaveTextContent('true');
+    // The token provider yields the silently-fetched Auth0 token (standalone path).
+    await waitFor(async () => {
+      expect(await getAccessToken()).toBe('auth0-token');
+    });
+  });
+
+  it('invokes Auth0 loginWithRedirect from the sign-in action when standalone + unauthenticated', async () => {
+    const loginWithRedirect = vi.fn();
+    auth0State.current = {
+      isAuthenticated: false,
+      isLoading: false,
+      user: undefined,
+      getAccessTokenSilently: vi.fn(async () => 'auth0-token'),
+      loginWithRedirect,
+    };
+    const user = userEvent.setup();
+    render(
+      <AuthProvider config={NO_AUTH0}>
+        <AuthBridge>
+          <RequireAuth>
+            <div>secret</div>
+          </RequireAuth>
+        </AuthBridge>
+      </AuthProvider>,
+    );
+    await user.click(screen.getByTestId('auth-signin'));
+    expect(loginWithRedirect).toHaveBeenCalledOnce();
+  });
+});
+
+// Reset the mocked Auth0 state so the host-token-path tests above stay isolated.
+afterEach(() => {
+  auth0State.current = {
+    isAuthenticated: false,
+    isLoading: false,
+    user: undefined,
+    getAccessTokenSilently: vi.fn(async () => 'auth0-token'),
+    loginWithRedirect: vi.fn(),
+  };
 });
 
 describe('route guards', () => {

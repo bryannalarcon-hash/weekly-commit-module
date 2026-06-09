@@ -1,14 +1,28 @@
-// vitest.workspace.ts — Vitest workspace aggregating every app/lib test project.
+// vitest.workspace.ts — Vitest workspace aggregating every app/lib test project (test env + plugins
+// only). The COVERAGE gate lives in the root vitest.config.ts: in Vitest 2.x coverage is a
+// root-level option and is ignored when set on a workspace project, so it must not live here.
 // Loads @vitejs/plugin-react so JSX in libs/* (which have no own vite config) transforms with the
-// automatic runtime, sets the jsdom env, jest-dom setup, and a coverage gate (lines >= 70, opt-in
-// via --coverage). apps/wc-remote keeps its own vite.config.ts for the MF + react transform.
+// automatic runtime, sets the jsdom env and jest-dom setup. The federated `wc/WeeklyCommitApp`
+// specifier is aliased to a local stub so the host's lazy import resolves under Vitest (no MF
+// runtime here); host.test.tsx vi.mock()s it for per-scenario behavior. apps/wc-remote keeps its
+// own vite.config.ts for the MF + react transform.
+import { fileURLToPath } from 'node:url';
 import { defineWorkspace } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+
+const wcRemoteStub = fileURLToPath(
+  new URL('./apps/host-shell/src/__mocks__/wc-remote-entry.tsx', import.meta.url),
+);
 
 export default defineWorkspace([
   {
     extends: false,
     plugins: [react()],
+    resolve: {
+      alias: {
+        'wc/WeeklyCommitApp': wcRemoteStub,
+      },
+    },
     test: {
       name: 'wcm',
       globals: true,
@@ -22,23 +36,6 @@ export default defineWorkspace([
         'apps/**/src/**/*.{test,spec}.{ts,tsx}',
         'libs/**/src/**/*.{test,spec}.{ts,tsx}',
       ],
-      coverage: {
-        provider: 'v8',
-        reporter: ['text', 'html'],
-        include: ['apps/**/src/**/*.{ts,tsx}', 'libs/**/src/**/*.{ts,tsx}'],
-        exclude: [
-          '**/*.{test,spec}.{ts,tsx}',
-          '**/main.tsx',
-          '**/vite-env.d.ts',
-          '**/*.config.{ts,js}',
-        ],
-        thresholds: {
-          lines: 70,
-          functions: 70,
-          branches: 70,
-          statements: 70,
-        },
-      },
     },
   },
 ]);
