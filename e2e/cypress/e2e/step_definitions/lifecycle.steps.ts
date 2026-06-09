@@ -62,10 +62,13 @@ When('they link item {int} to a Supporting Outcome', (n: number) => {
 });
 
 When('they set item {int} chess tier to {string}', (n: number, tier: string) => {
+  // The re-skinned ChessSelector is a segmented radiogroup (role=radio buttons carrying data-tier),
+  // not a native <select> — click the tier's segment.
   cy.get('[data-testid="composer-item"]')
     .eq(n - 1)
     .find('[data-testid="chess-tier-select"]')
-    .select(tier);
+    .find(`[data-tier="${tier}"]`)
+    .click();
 });
 
 When('they submit and lock the week', () => {

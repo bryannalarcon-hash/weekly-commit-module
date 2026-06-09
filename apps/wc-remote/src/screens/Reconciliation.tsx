@@ -62,6 +62,7 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
   const [markReconciled, reconciledState] = useMarkReconciledMutation();
   const [carryForward, carryState] = useCarryForwardMutation();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmCarryOpen, setConfirmCarryOpen] = useState(false);
   // Local optimistic status per item so the control reflects the user's choice immediately while the
   // debounced PATCH + refetch is in flight (otherwise the controlled value snaps back to the server's).
   const [localStatus, setLocalStatus] = useState<Record<string, CommitItemStatus>>({});
@@ -189,14 +190,36 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
             <Icon.checkCircle size={22} style={{ color: 'var(--signal-deep)' }} />
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>Week reconciled</div>
+            <div style={{ flex: 1 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Week reconciled</div>
+                {/* The lifecycle badge appears everywhere the week's state does (design §lifecycle);
+                    a reconciled week shows its RECONCILED badge here too. */}
+                <LifecycleBadge state={data.lifecycleState} />
+              </div>
               <div style={{ fontSize: 13, color: 'var(--ink-mid)' }}>
-                {carryingOver > 0
-                  ? `${carryingOver} ${carryingOver === 1 ? 'item' : 'items'} carried forward into next week.`
-                  : 'Nothing carried over — every commitment landed.'}
+                {incompleteCount > 0
+                  ? `${incompleteCount} unfinished ${incompleteCount === 1 ? 'item' : 'items'} can carry forward into next week.`
+                  : carriedCount > 0
+                    ? `${carriedCount} ${carriedCount === 1 ? 'item' : 'items'} carried forward into next week.`
+                    : 'Nothing carried over — every commitment landed.'}
               </div>
             </div>
+            {/* Carry-forward is a distinct owner action available once the week is reconciled (the
+                FSM/backend keep it separate from the manager's reconcile). Offer it while there are
+                still-unfinished items to move into next week. */}
+            {incompleteCount > 0 && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setConfirmCarryOpen(true)}
+                data-testid="carry-forward"
+              >
+                <Icon.carry size={15} /> Carry forward
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -314,6 +337,28 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
         {incompleteCount > 0
           ? `The ${incompleteCount} incomplete ${incompleteCount === 1 ? 'item' : 'items'} will be carried forward into next week’s commit, keeping their lineage.`
           : 'Every commitment landed — nothing carries forward.'}
+      </ConfirmDialog>
+
+      {/* Post-reconcile carry-forward (the owner's action once the week is RECONCILED): carries the
+          still-unfinished items into next week's draft — no re-reconcile. */}
+      <ConfirmDialog
+        open={confirmCarryOpen}
+        icon="carry"
+        title="Carry unfinished work forward?"
+        confirmLabel="Carry forward"
+        busy={carryState.isLoading}
+        onConfirm={() => {
+          void (async () => {
+            try {
+              await carryForward(commitId).unwrap();
+            } finally {
+              setConfirmCarryOpen(false);
+            }
+          })();
+        }}
+        onCancel={() => setConfirmCarryOpen(false)}
+      >
+        {`The ${incompleteCount} unfinished ${incompleteCount === 1 ? 'item' : 'items'} will be copied into next week’s draft commit, keeping their lineage.`}
       </ConfirmDialog>
     </section>
   );

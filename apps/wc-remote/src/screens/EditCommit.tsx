@@ -350,6 +350,24 @@ export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX
     return map;
   }, [rcdoTree]);
 
+  // "Suggested for you" shortlist surfaced at the RCDO picker's root (design §6.3.1). There is no
+  // dedicated suggestion endpoint yet, so we surface a stable first-N slice of leaf Supporting
+  // Outcomes — enough to give the drawer a non-empty shortlist and a quick path to a common leaf.
+  const suggestedSoIds = useMemo<string[]>(() => {
+    const ids: string[] = [];
+    for (const rally of rcdoTree ?? []) {
+      for (const dobj of rally.definingObjectives) {
+        for (const outcome of dobj.outcomes) {
+          for (const so of outcome.supportingOutcomes) {
+            ids.push(so.id);
+            if (ids.length >= 6) return ids;
+          }
+        }
+      }
+    }
+    return ids;
+  }, [rcdoTree]);
+
   const titleFor = (item: CommitItemDto): string | null =>
     item.supportingOutcomeId
       ? (titles[item.supportingOutcomeId] ?? outcomeTitles[item.supportingOutcomeId] ?? null)
@@ -582,6 +600,7 @@ export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX
         <RcdoPickerDrawer
           tree={rcdoTree ?? []}
           selectedId={selectedIdForPicker}
+          suggestedIds={suggestedSoIds}
           onSelect={onPicked}
           onClear={() => {
             clearLink(pickerFor);

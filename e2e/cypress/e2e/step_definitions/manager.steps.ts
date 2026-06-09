@@ -31,7 +31,9 @@ Then('the dashboard shows a roll-up row for {string}', (name: string) => {
 });
 
 Then('the dashboard shows an alignment percentage column', () => {
-  cy.contains('Alignment %').should('be.visible');
+  // The re-skinned Team Dashboard table header reads "Alignment" (the % lives in each cell); assert
+  // the column exists within the roll-up table, case-insensitively (robust to the kicker casing).
+  cy.get('[data-testid="rollup-table"]').contains(/alignment/i).should('be.visible');
 });
 
 When('the manager drills through the {string} row', (name: string) => {
