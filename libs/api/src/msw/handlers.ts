@@ -9,14 +9,20 @@ import type {
   CommitItemDto,
   CreateCommitRequest,
   ItemStatusPatch,
+  OutlookConnectionDto,
+  OutlookSettingsRequest,
   ProblemDetail,
+  PulseDto,
+  PulseRequest,
   RallyCryNode,
   ReconciliationView,
   ReviewDto,
+  ReviewQueueRow,
   ReviewRequest,
   RollupRow,
   SupportingOutcomeDto,
   UpdateCommitRequest,
+  WeekSummary,
 } from '@wcm/types';
 
 const BASE = '/api';
@@ -30,12 +36,40 @@ const uuid = (): string =>
 
 /** In-memory commit store keyed by id (reset via resetMockDb in tests). */
 const commits = new Map<string, CommitDto>();
+/** Per-commit Pulse readings (commitId → reading). */
+const pulses = new Map<string, PulseDto>();
+/** The acting member's single Outlook connection row. */
+let outlook: OutlookConnectionDto = {
+  status: 'DISCONNECTED',
+  account: null,
+  lastSyncAt: null,
+  createEventOnLock: true,
+};
 
 export function resetMockDb(): void {
   commits.clear();
+  pulses.clear();
+  outlook = {
+    status: 'DISCONNECTED',
+    account: null,
+    lastSyncAt: null,
+    createEventOnLock: true,
+  };
 }
 
-function problem(status: number, code: string, detail: string): HttpResponse {
+/** Project a stored commit down to the list/history WeekSummary header. */
+function toSummary(dto: CommitDto): WeekSummary {
+  return {
+    commitId: dto.id,
+    weekStart: dto.weekStart,
+    lifecycleState: dto.lifecycleState,
+    itemCount: dto.items.length,
+    completedCount: dto.items.filter((i) => i.status === 'COMPLETE').length,
+    carriedInCount: dto.items.filter((i) => i.carriedFromItemId).length,
+  };
+}
+
+function problem(status: number, code: string, detail: string): HttpResponse<ProblemDetail> {
   const body: ProblemDetail = {
     type: `urn:wcm:problem:${code}`,
     title: code,
@@ -89,6 +123,23 @@ const ALL_LEAVES: SupportingOutcomeDto[] = RCDO_TREE.flatMap((rc) =>
 
 export const handlers = [
   // --- Commits (U11) ---------------------------------------------------------------------------
+  // NOTE: the literal `/commits` and `/commits/current` routes are declared BEFORE `/commits/:id`
+  // so the `:id` param route does not swallow them (MSW matches handlers in array order).
+  http.get(`${BASE}/commits/current`, () => {
+    const current = [...commits.values()]
+      .filter((c) => c.lifecycleState !== 'CARRY_FORWARD')
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart))[0];
+    // 204 when there is no open week yet → the "Start your week" empty state.
+    return current ? HttpResponse.json(current) : new HttpResponse(null, { status: 204 });
+  }),
+
+  http.get(`${BASE}/commits`, () => {
+    const summaries = [...commits.values()]
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
+      .map(toSummary);
+    return HttpResponse.json(summaries);
+  }),
+
   http.post(`${BASE}/commits`, async ({ request }) => {
     const req = (await request.json()) as CreateCommitRequest;
     const dto: CommitDto = {
@@ -248,4 +299,99 @@ export const handlers = [
       size,
     });
   }),
+
+  http.get(`${BASE}/review-queue`, ({ request }) => {
+    const url = new URL(request.url);
+    const size = Number(url.searchParams.get('size') ?? '50');
+    const page = Number(url.searchParams.get('page') ?? '0');
+    const rows: ReviewQueueRow[] = [
+      {
+        memberId: uuid(),
+        memberName: 'Diego Alvarez',
+        commitId: uuid(),
+        lifecycleState: 'LOCKED',
+        overdue: false,
+        itemCount: 4,
+        completedCount: 2,
+        reviewState: 'UNREVIEWED',
+      },
+      {
+        memberId: uuid(),
+        memberName: 'Priya Natarajan',
+        commitId: null,
+        lifecycleState: 'DRAFT',
+        overdue: true,
+        itemCount: 1,
+        completedCount: 0,
+        reviewState: 'UNREVIEWED',
+      },
+    ];
+    return HttpResponse.json({
+      content: rows,
+      totalElements: rows.length,
+      totalPages: 1,
+      number: page,
+      size,
+    });
+  }),
+
+  // --- Pulse (U19) -----------------------------------------------------------------------------
+  http.get(`${BASE}/commits/:id/pulse`, ({ params }) => {
+    const reading = pulses.get(params.id as string) ?? {
+      rating: null,
+      comment: null,
+      privateToManager: false,
+    };
+    return HttpResponse.json(reading);
+  }),
+
+  http.put(`${BASE}/commits/:id/pulse`, async ({ params, request }) => {
+    const req = (await request.json()) as PulseRequest;
+    const reading: PulseDto = {
+      rating: req.rating,
+      comment: req.comment ?? null,
+      privateToManager: req.privateToManager ?? false,
+    };
+    pulses.set(params.id as string, reading);
+    return HttpResponse.json(reading);
+  }),
+
+  // --- Outlook integration (U22) ---------------------------------------------------------------
+  http.get(`${BASE}/integration/outlook`, () => HttpResponse.json(outlook)),
+
+  http.post(`${BASE}/integration/outlook/connect`, () =>
+    HttpResponse.json({
+      authorizationUrl:
+        'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=wcm&scope=Calendars.ReadWrite',
+    }),
+  ),
+
+  http.delete(`${BASE}/integration/outlook`, () => {
+    outlook = {
+      status: 'DISCONNECTED',
+      account: null,
+      lastSyncAt: null,
+      createEventOnLock: outlook.createEventOnLock,
+    };
+    return HttpResponse.json(outlook);
+  }),
+
+  http.put(`${BASE}/integration/outlook/settings`, async ({ request }) => {
+    const req = (await request.json()) as OutlookSettingsRequest;
+    outlook = { ...outlook, createEventOnLock: req.createEventOnLock };
+    return HttpResponse.json(outlook);
+  }),
 ];
+
+/**
+ * Test helper: force the mock Outlook connection into a CONNECTED state (the real connect flow is a
+ * Graph redirect we cannot complete under jsdom). Lets Settings tests assert the connected surface.
+ */
+export function __setMockOutlookConnected(account = 'ada@solovis.com'): void {
+  outlook = {
+    status: 'CONNECTED',
+    account,
+    lastSyncAt: new Date().toISOString(),
+    createEventOnLock: outlook.createEventOnLock,
+  };
+}

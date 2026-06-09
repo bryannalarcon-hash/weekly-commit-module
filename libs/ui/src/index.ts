@@ -1,19 +1,25 @@
-// libs/ui — shared presentational primitives barrel for the Weekly Commit Module.
-// Tailwind + Flowbite React components (lifecycle badge, RCDO chip, etc.) land here in unit U5.
+// libs/ui — shared presentational primitives barrel for the Weekly Commit Module (design brief §7).
+// Tailwind + Flowbite React components only (no CSS modules/styled-components). Exposes the design
+// tokens, lifecycle badge, RCDO chip/breadcrumb, autosave indicator, past-due banner, carried-forward
+// card, skeleton/empty/error primitives, confirm dialog, internal sub-nav, and the inline icon set.
 import type { LifecycleState } from '@wcm/types';
+import { LIFECYCLE_VISUAL } from './tokens';
 
-/** Maps a lifecycle state to a Flowbite color token; used by the upcoming LifecycleBadge. */
+export * from './tokens';
+export * from './icons';
+export * from './LifecycleBadge';
+export * from './RcdoChip';
+export * from './AutosaveIndicator';
+export * from './PastDueBanner';
+export * from './CarriedForwardCard';
+export * from './StatePrimitives';
+export * from './ConfirmDialog';
+export * from './WcNavigation';
+
+/**
+ * Legacy helper: maps a lifecycle state to a Flowbite color token. Prefer LIFECYCLE_VISUAL /
+ * LifecycleBadge; kept because the early WeeklyCommitApp scaffold imports it.
+ */
 export function lifecycleColor(state: LifecycleState): string {
-  switch (state) {
-    case 'DRAFT':
-      return 'gray';
-    case 'LOCKED':
-      return 'blue';
-    case 'RECONCILING':
-      return 'yellow';
-    case 'RECONCILED':
-      return 'green';
-    case 'CARRY_FORWARD':
-      return 'purple';
-  }
+  return LIFECYCLE_VISUAL[state].flowbiteColor;
 }
