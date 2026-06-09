@@ -146,18 +146,38 @@ class RollupControllerIT extends AbstractWebIT {
       report("pageRep" + i, mgr);
     }
 
-    // Page 0, size 2 -> 2 rows, totalElements 5.
+    // Page 0, size 2 -> 2 rows, totalElements 5. PagedModel nests paging metadata under "page".
     mockMvc
         .perform(get("/api/rollup").param("page", "0").param("size", "2").with(as(mgr)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content.length()").value(2))
-        .andExpect(jsonPath("$.totalElements").value(5));
+        .andExpect(jsonPath("$.page.totalElements").value(5))
+        .andExpect(jsonPath("$.page.size").value(2))
+        .andExpect(jsonPath("$.page.number").value(0));
 
     // Page 2, size 2 -> the trailing single row.
     mockMvc
         .perform(get("/api/rollup").param("page", "2").param("size", "2").with(as(mgr)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content.length()").value(1));
+  }
+
+  @Test
+  void reportsAreReturnedInAStableNameThenIdOrderAcrossPages() throws Exception {
+    // Deferred fix: a stable sort (display name, then id) makes page boundaries deterministic so
+    // the
+    // same record never appears on two pages / goes missing across the 2000-record requirement.
+    Member mgr = manager("sortMgr");
+    report("Zoe", mgr);
+    report("Ada", mgr);
+    report("Mia", mgr);
+
+    mockMvc
+        .perform(get("/api/rollup").param("page", "0").param("size", "3").with(as(mgr)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content[0].memberName").value("Ada"))
+        .andExpect(jsonPath("$.content[1].memberName").value("Mia"))
+        .andExpect(jsonPath("$.content[2].memberName").value("Zoe"));
   }
 
   @Test

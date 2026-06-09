@@ -95,8 +95,13 @@ public class WeeklyCommit extends AbstractAuditingEntity {
     return this;
   }
 
-  /** True when every working-set item is linked to a SupportingOutcome (DRAFT->LOCKED guard). */
+  /**
+   * True when this commit has AT LEAST ONE item and EVERY item is linked to a SupportingOutcome
+   * (DRAFT->LOCKED guard). The non-empty requirement is deliberate: {@code allMatch} over an empty
+   * list is vacuously true, which would have let an item-less commit lock — a locked commit must
+   * carry a real plan, so a zero-item commit is NOT "all linked".
+   */
   public boolean allItemsLinked() {
-    return items.stream().allMatch(CommitItem::isLinked);
+    return !items.isEmpty() && items.stream().allMatch(CommitItem::isLinked);
   }
 }

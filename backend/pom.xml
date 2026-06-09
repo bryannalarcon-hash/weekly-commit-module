@@ -29,7 +29,27 @@
         <spotbugs.version>4.8.6.6</spotbugs.version>
         <google-java-format.version>1.22.0</google-java-format.version>
         <springdoc.version>2.6.0</springdoc.version>
+        <!-- AWS SDK v2 BOM (U26): SnsEventPublisher + the SQS poller. -->
+        <awssdk.version>2.31.78</awssdk.version>
+        <!-- OkHttp MockWebServer: hermetic Graph server for the GraphCalendarAdapter test (U16). -->
+        <mockwebserver.version>4.12.0</mockwebserver.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--
+              AWS SDK v2 BOM aligns the sns/sqs client versions (U26). Imported so the sns/sqs deps
+              below carry no explicit version and stay mutually consistent.
+            -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -83,6 +103,21 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
+        <!--
+          AWS SDK v2 SNS + SQS (U26): the @Profile("aws") SnsEventPublisher publishes DomainEvent
+          JSON to an SNS topic; the SqsEventPoller long-polls the subscribed SQS queue and dispatches
+          to the same consumers. Inactive under the default profile (in-process publisher), so the
+          app boots with no AWS creds. Version comes from the AWS BOM above.
+        -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sns</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sqs</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -107,6 +142,28 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          LocalStack Testcontainer (U26): the hermetic SNS->SQS round-trip IT runs real AWS APIs
+          against an in-container LocalStack, proving publish->SQS->consume->CalendarSyncPort without
+          touching real AWS. Version inherits Spring Boot's managed testcontainers BOM (1.19.8).
+        -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>localstack</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          OkHttp MockWebServer (U16): stands up a fake Graph endpoint so the GraphCalendarAdapter
+          test asserts the exact event body + Authorization header it sends, with no live M365 call.
+        -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <version>${mockwebserver.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

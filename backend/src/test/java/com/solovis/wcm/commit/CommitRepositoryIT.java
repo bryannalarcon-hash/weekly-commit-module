@@ -140,4 +140,29 @@ class CommitRepositoryIT extends AbstractPersistenceIT {
             .build());
     assertThat(reviews.findByWeeklyCommitId(wc.getId())).isPresent();
   }
+
+  @Test
+  void secondManagerReviewForSameCommitViolatesUniqueConstraint() {
+    // Deferred fix (V7): one ManagerReview per weekly_commit. A second insert for the same commit
+    // must fail at the DB, not silently create a duplicate review.
+    Member reviewer = newMember("dupReviewer");
+    Member author = newMember("dupAuthor");
+    WeeklyCommit wc = newCommit(author.getId(), LocalDate.parse("2026-06-08"));
+    reviews.saveAndFlush(
+        ManagerReview.builder()
+            .weeklyCommitId(wc.getId())
+            .reviewerId(reviewer.getId())
+            .state(ReviewState.UNREVIEWED)
+            .build());
+
+    assertThatThrownBy(
+            () ->
+                reviews.saveAndFlush(
+                    ManagerReview.builder()
+                        .weeklyCommitId(wc.getId())
+                        .reviewerId(reviewer.getId())
+                        .state(ReviewState.REVIEWED)
+                        .build()))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
 }

@@ -1,7 +1,10 @@
 // SecurityConfig — turns the API into an Auth0-backed OAuth2 resource server (U15). The single
-// SecurityFilterChain is ALWAYS active: it permits the health/openapi probes, gates manager-only
-// routes (rollup, review, reconcile transitions) behind SCOPE_reconcile:commits, and requires a
-// valid JWT everywhere else; bearer auth failures render as 401/403. Auth0 "permissions" are mapped
+// SecurityFilterChain is ALWAYS active: it permits the health/openapi probes AND the browser-borne
+// Graph consent callback (which carries no bearer token and is guarded by a signed `state`
+// instead),
+// gates manager-only routes (rollup, review, reconcile transitions) behind SCOPE_reconcile:commits,
+// and requires a valid JWT everywhere else; bearer auth failures render as 401/403. Auth0
+// "permissions" are mapped
 // to SCOPE_ authorities. The PROD RS256 JwtDecoder (issuer-uri + audience validation) is built ONLY
 // when AUTH0_ISSUER_URI is set, so the test profile (TestJwtConfig's local-keypair decoder) and a
 // bare local boot still start; that prod decoder also rejects forged test-JWTs (wrong issuer/JWKS).
@@ -48,6 +51,11 @@ public class SecurityConfig {
                     .requestMatchers("/actuator/health", "/actuator/health/**")
                     .permitAll()
                     .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**")
+                    .permitAll()
+                    // OAuth consent callback: Entra redirects the user's BROWSER here with NO
+                    // bearer token, so it cannot be JWT-gated. Its guard is the signed `state`
+                    // (GraphConsentState HMAC + expiry) it verifies to derive the acting member.
+                    .requestMatchers(HttpMethod.GET, "/api/graph/callback")
                     .permitAll()
                     // Manager-only routes: rollup, per-commit review, and the reconcile
                     // transitions.

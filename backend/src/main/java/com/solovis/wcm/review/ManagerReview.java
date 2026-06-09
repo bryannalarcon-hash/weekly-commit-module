@@ -1,6 +1,7 @@
 // ManagerReview — a manager's review of one WeeklyCommit; maps manager_review.
 // state (UNREVIEWED/INCOMPLETE/REVIEWED) gates the FSM invariant RECONCILING->RECONCILED. Holds the
-// reviewerId, an optional comment, and reviewedAt. Extends AbstractAuditingEntity.
+// reviewerId, an optional comment, and reviewedAt. Extends AbstractAuditingEntity. UNIQUE per
+// weekly_commit (one review per commit — enforced by V7 + this table mapping).
 package com.solovis.wcm.review;
 
 import com.solovis.wcm.common.AbstractAuditingEntity;
@@ -10,6 +11,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -21,7 +23,12 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(name = "manager_review")
+@Table(
+    name = "manager_review",
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uq_manager_review_weekly_commit",
+            columnNames = "weekly_commit_id"))
 public class ManagerReview extends AbstractAuditingEntity {
 
   // Application-assigned UUID PK (no @GeneratedValue); Persistable.isNew() drives INSERT vs merge.

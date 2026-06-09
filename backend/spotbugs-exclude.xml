@@ -11,6 +11,10 @@
   3. EI_EXPOSE_REP2 on the web controllers AND the JWT current-member provider: they store
      constructor-injected Spring @Service beans (framework-managed singletons), which SpotBugs flags
      as "external mutable object" — the standard dependency-injection idiom, not a real escape.
+  4. The integration package (U16/U26): the Graph adapters/services/controllers store injected
+     Spring beans (GraphProperties/AwsProperties @ConfigurationProperties singletons, @Service deps)
+     — same DI idiom as #3 — and TokenCipher validates its AES key in the constructor (deliberate
+     fail-fast on a misconfigured GRAPH_TOKEN_ENC_KEY, same pattern as #1).
   All other detectors stay active.
 -->
 <FindBugsFilter>
@@ -51,5 +55,18 @@
   <Match>
     <Class name="com.solovis.wcm.common.JwtCurrentMemberProvider"/>
     <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
+  <!-- Integration package (U16/U26): adapters/services/controllers store injected Spring beans
+       (rationale #4) — DI idiom, not a real escape. -->
+  <Match>
+    <Package name="~com\.solovis\.wcm\.integration"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
+  <!-- TokenCipher validates the AES key in its constructor (fail-fast, rationale #4 / #1). -->
+  <Match>
+    <Class name="com.solovis.wcm.integration.TokenCipher"/>
+    <Bug pattern="CT_CONSTRUCTOR_THROW"/>
   </Match>
 </FindBugsFilter>

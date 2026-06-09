@@ -30,12 +30,20 @@ public class LifecycleService {
   }
 
   /**
-   * DRAFT -> LOCKED. Guard (KTD5): EVERY item must be linked to a SupportingOutcome, else throw. On
-   * success, freezes the plan into a {@link CommitSnapshot} (text/link/tier only, KTD4), sets the
-   * commit LOCKED and stamps submittedAt. Returns the snapshot the caller persists.
+   * DRAFT -> LOCKED. Guards: (1) the commit must carry AT LEAST ONE item — an empty commit cannot
+   * lock (a vacuous all-linked check used to allow it); (2) KTD5: EVERY item must be linked to a
+   * SupportingOutcome, else throw. On success, freezes the plan into a {@link CommitSnapshot}
+   * (text/link/tier only, KTD4), sets the commit LOCKED and stamps submittedAt. Returns the
+   * snapshot the caller persists.
    */
   public CommitSnapshot lock(WeeklyCommit commit, Instant lockedAt) {
     requireState(commit, LifecycleState.DRAFT, LifecycleState.LOCKED);
+    if (commit.getItems().isEmpty()) {
+      throw new IllegalTransitionException(
+          LifecycleState.DRAFT,
+          LifecycleState.LOCKED,
+          "a commit must have at least one item before lock");
+    }
     for (CommitItem item : commit.getItems()) {
       if (!item.isLinked()) {
         throw new IllegalTransitionException(

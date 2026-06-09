@@ -2,12 +2,14 @@
 // RFC-7807 ProblemDetail responses (KTD9) for every controller. Maps: unresolved member -> 401,
 // forbidden/ownership -> 403, not-found -> 404, illegal lifecycle transition -> 409, a persistence
 // constraint collision (e.g. duplicate member+week) -> 409, unprocessable precondition (unlinked
-// submit) -> 422, bean-validation failures -> 400. Each ProblemDetail carries a stable "type" URN
+// submit) -> 422, an unverifiable Graph consent state -> 400, bean-validation failures -> 400. Each
+// ProblemDetail carries a stable "type" URN
 // and a "code" property so the FE can branch on errors. The data-integrity handler is the backstop
 // that guarantees no DB constraint violation ever leaks as a raw Spring 500.
 package com.solovis.wcm.common;
 
 import com.solovis.wcm.commit.IllegalTransitionException;
+import com.solovis.wcm.integration.InvalidConsentStateException;
 import java.net.URI;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -67,6 +69,16 @@ public class ApiExceptionHandler {
         "Conflict",
         "constraint_violation",
         "the request conflicts with an existing record");
+  }
+
+  /**
+   * A consent callback presented an OAuth {@code state} that failed verification (missing,
+   * tampered, or expired). Renders 400: this is a rejected/forged request, not an authenticated
+   * principal lacking rights — surfacing it as 401/403 would wrongly imply a login problem.
+   */
+  @ExceptionHandler(InvalidConsentStateException.class)
+  public ProblemDetail onInvalidConsentState(InvalidConsentStateException ex) {
+    return problem(HttpStatus.BAD_REQUEST, "Bad Request", "invalid_consent_state", ex.getMessage());
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

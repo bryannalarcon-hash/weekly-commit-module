@@ -112,6 +112,32 @@ class LifecycleServiceTest {
   }
 
   @Test
+  void lockBlockedWhenCommitHasZeroItems() {
+    // A vacuous all-linked guard (allMatch over an empty list) used to let an EMPTY commit lock.
+    // A locked commit must carry at least one (linked) item; zero items cannot lock (deferred fix).
+    WeeklyCommit wc = commit(LifecycleState.DRAFT);
+    assertThat(wc.allItemsLinked()).isFalse();
+    assertThatThrownBy(() -> service.lock(wc, T0))
+        .isInstanceOf(IllegalTransitionException.class)
+        .hasMessageContaining("at least one");
+    assertThat(wc.getLifecycleState()).isEqualTo(LifecycleState.DRAFT);
+  }
+
+  @Test
+  void allItemsLinkedTrueOnlyWhenAtLeastOneItemAndAllLinked() {
+    WeeklyCommit empty = commit(LifecycleState.DRAFT);
+    assertThat(empty.allItemsLinked()).isFalse(); // zero items is NOT "all linked"
+
+    WeeklyCommit oneLinked = commit(LifecycleState.DRAFT);
+    oneLinked.addItem(item(true, CommitItemStatus.OPEN, ChessTier.KING));
+    assertThat(oneLinked.allItemsLinked()).isTrue();
+
+    WeeklyCommit oneUnlinked = commit(LifecycleState.DRAFT);
+    oneUnlinked.addItem(item(false, CommitItemStatus.OPEN, ChessTier.KING));
+    assertThat(oneUnlinked.allItemsLinked()).isFalse();
+  }
+
+  @Test
   void lockSucceedsWhenAllLinkedAndWritesAnImmutableSnapshot() {
     WeeklyCommit wc = commit(LifecycleState.DRAFT);
     CommitItem a = item(true, CommitItemStatus.OPEN, ChessTier.KING);

@@ -151,6 +151,60 @@ class CommitControllerIT extends AbstractWebIT {
   }
 
   @Test
+  void submitWithZeroItemsIsUnprocessable() throws Exception {
+    // Deferred fix: a commit with NO items cannot LOCK (the old vacuous allItemsLinked() let it).
+    Member zoe = member("zoe");
+    WeeklyCommit wc =
+        commits.saveAndFlush(
+            WeeklyCommit.builder()
+                .memberId(zoe.getId())
+                .weekStart(java.time.LocalDate.parse("2026-06-08"))
+                .lifecycleState(LifecycleState.DRAFT)
+                .build());
+
+    mockMvc
+        .perform(post("/api/commits/{id}/submit", wc.getId()).with(as(zoe)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("unprocessable"));
+
+    assertThat(commits.findById(wc.getId()).orElseThrow().getLifecycleState())
+        .isEqualTo(LifecycleState.DRAFT);
+  }
+
+  @Test
+  void createWithAbsurdFarFutureWeekStartIsRejected() throws Exception {
+    // Deferred fix: weekStart is bounded — an absurd far-future date is a 400 validation error.
+    Member yan = member("yan");
+    String body =
+        """
+        {"weekStart":"3000-01-06","items":[]}
+        """;
+    mockMvc
+        .perform(
+            post("/api/commits")
+                .with(as(yan))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void createWithAbsurdFarPastWeekStartIsRejected() throws Exception {
+    Member xan = member("xan");
+    String body =
+        """
+        {"weekStart":"1990-01-01","items":[]}
+        """;
+    mockMvc
+        .perform(
+            post("/api/commits")
+                .with(as(xan))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
   void submitValidLocksTheCommit() throws Exception {
     Member carol = member("carol");
     WeeklyCommit wc = draftWithLinkedItem(carol);

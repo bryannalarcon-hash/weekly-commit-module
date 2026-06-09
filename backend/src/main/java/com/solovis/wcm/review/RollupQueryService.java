@@ -16,6 +16,7 @@ import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberRepository;
 import com.solovis.wcm.rcdo.RcdoRepository;
 import com.solovis.wcm.review.dto.RollupRow;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -52,12 +53,17 @@ public class RollupQueryService {
   /**
    * GET /rollup — a page of the acting manager's reports with their metrics. The report set is
    * derived from the acting manager id (never a param), so cross-manager reads return only the
-   * caller's own reports. Page size is capped at {@link #MAX_PAGE_SIZE}.
+   * caller's own reports. Page size is capped at {@link #MAX_PAGE_SIZE}. Reports are sorted by a
+   * STABLE total order (display name, then id) BEFORE paging so page boundaries are deterministic
+   * across the brief's 2000-record requirement (two reports with the same display name still order
+   * consistently by their unique id). The caller wraps the returned Page in a PagedModel so Jackson
+   * serializes a stable page shape rather than a raw PageImpl.
    */
   @Transactional(readOnly = true)
   public Page<RollupRow> rollup(Pageable pageable) {
     UUID managerId = currentMember.currentMemberId();
-    List<Member> reports = members.findByManagerId(managerId);
+    List<Member> reports =
+        members.findByManagerId(managerId).stream().sorted(STABLE_REPORT_ORDER).toList();
 
     int pageSize = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
     int from = (int) Math.min((long) pageable.getPageNumber() * pageSize, reports.size());
@@ -66,6 +72,12 @@ public class RollupQueryService {
     List<RollupRow> rows = reports.subList(from, to).stream().map(this::rowFor).toList();
     return new PageImpl<>(rows, pageable, reports.size());
   }
+
+  /** Stable total order for reports: display name (case-insensitive), then the unique id. */
+  private static final Comparator<Member> STABLE_REPORT_ORDER =
+      Comparator.comparing(
+              Member::getDisplayName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+          .thenComparing(Member::getId);
 
   private RollupRow rowFor(Member report) {
     List<WeeklyCommit> reportCommits = commits.findByMemberId(report.getId());

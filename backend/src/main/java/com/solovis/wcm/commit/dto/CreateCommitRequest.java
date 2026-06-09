@@ -1,6 +1,7 @@
-// CreateCommitRequest — body of POST /commits (U11). weekStart + the initial items. The optional
-// memberId field exists ONLY so the controller test can prove KTD6: a client-supplied memberId is
-// IGNORED — the owner is always the CurrentMemberProvider's acting member, never this field.
+// CreateCommitRequest — body of POST /commits (U11). weekStart (bounded by @WeekStartBounds to a
+// sane window around now — deferred fix) + the initial items. The optional memberId field exists
+// ONLY so the controller test can prove KTD6: a client-supplied memberId is IGNORED — the owner is
+// always the CurrentMemberProvider's acting member, never this field.
 package com.solovis.wcm.commit.dto;
 
 import jakarta.validation.Valid;
@@ -10,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record CreateCommitRequest(
-    @NotNull LocalDate weekStart,
+    @NotNull @WeekStartBounds LocalDate weekStart,
     @Valid List<CommitItemRequest> items,
     /** IGNORED by the server (KTD6) — kept only to assert spoofing is rejected. */
     UUID memberId) {
