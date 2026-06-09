@@ -151,7 +151,8 @@ DB_URL=jdbc:postgresql://localhost:5433/wcm SPRING_PROFILES_ACTIVE=e2e,demo \
   mvn -f backend/pom.xml spring-boot:run
 ```
 
-OpenAPI / Swagger UI: `http://localhost:8080/swagger-ui/index.html` · health: `/actuator/health`.
+OpenAPI / Swagger UI: `http://localhost:8080/swagger-ui/index.html` · health: `/actuator/health`. A
+checked-in static contract is also generated at [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ### Frontend (dev)
 

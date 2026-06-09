@@ -1,0 +1,1010 @@
+openapi: 3.0.1
+info:
+  title: Weekly Commit Module API
+  description: "Weekly commit lifecycle (draft -> lock -> reconcile -> carry-forward),\
+    \ RCDO browsing, manager review and team roll-up. Acting identity is resolved\
+    \ server-side (CurrentMemberProvider), never from the request body."
+  license:
+    name: Proprietary
+  version: 0.0.1
+servers:
+- url: http://localhost:8080
+  description: Generated server url
+paths:
+  /api/integration/outlook/settings:
+    put:
+      tags:
+      - outlook-controller
+      summary: Update the create-event-on-lock sync preference
+      operationId: updateSettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutlookSettingsRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OutlookConnectionDto"
+  /api/commits/{id}:
+    get:
+      tags:
+      - commit-controller
+      summary: "Read a weekly commit (ownership-checked: 403 if not the acting member's)"
+      operationId: get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+    put:
+      tags:
+      - commit-controller
+      summary: Replace a DRAFT commit's items (409 if the commit is LOCKED or later)
+      operationId: update
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCommitRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/commits/{id}/pulse:
+    get:
+      tags:
+      - pulse-controller
+      summary: Read the acting member's weekly Pulse for this commit (empty when unrated)
+      operationId: get_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PulseDto"
+    put:
+      tags:
+      - pulse-controller
+      summary: Upsert the acting member's weekly Pulse (rating 1..5)
+      operationId: put
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PulseRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PulseDto"
+  /api/integration/outlook/connect:
+    post:
+      tags:
+      - outlook-controller
+      summary: "Begin Outlook consent: the Entra authorize URL to redirect to"
+      operationId: connect
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OutlookConnectResponse"
+  /api/e2e/reset:
+    post:
+      tags:
+      - e-2e-reset-controller
+      operationId: reset
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+  /api/e2e/commits/{id}/inject-item:
+    post:
+      tags:
+      - e-2e-reset-controller
+      operationId: injectItem
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+  /api/commits:
+    get:
+      tags:
+      - commit-controller
+      summary: List the acting member's own weekly commits as compact week headers
+      operationId: listMine
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WeekSummary"
+    post:
+      tags:
+      - commit-controller
+      summary: Create a DRAFT weekly commit owned by the acting member (from the JWT)
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommitRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/commits/{id}/submit:
+    post:
+      tags:
+      - commit-controller
+      summary: Submit (DRAFT -> LOCKED); 422 if any item is unlinked
+      operationId: submit
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/commits/{id}/review:
+    post:
+      tags:
+      - review-controller
+      summary: Upsert the commit's manager review (403 unless the owner's manager)
+      operationId: review
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReviewDto"
+  /api/commits/{id}/reconciled:
+    post:
+      tags:
+      - reconciliation-controller
+      summary: Mark reviewed (RECONCILING -> RECONCILED); forces ManagerReview REVIEWED
+      operationId: reconciled
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/commits/{id}/reconcile:
+    post:
+      tags:
+      - reconciliation-controller
+      summary: Start reconciliation (LOCKED -> RECONCILING)
+      operationId: reconcile
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/commits/{id}/carry-forward:
+    post:
+      tags:
+      - reconciliation-controller
+      summary: Carry INCOMPLETE items into a fresh next-week DRAFT
+      operationId: carryForward
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/commits/{id}/items/{itemId}/status:
+    patch:
+      tags:
+      - reconciliation-controller
+      summary: Patch an item's ACTUAL status (allowed only while RECONCILING; else
+        409)
+      operationId: patchStatus
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemStatusPatch"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+  /api/rollup:
+    get:
+      tags:
+      - rollup-controller
+      summary: "Team roll-up for the acting manager (page >= 0, 1 <= size <= 2000)"
+      operationId: rollup
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          minimum: 0
+          type: integer
+          format: int32
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          maximum: 2000
+          minimum: 1
+          type: integer
+          format: int32
+          default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRollupRow"
+  /api/rollup/reports/{memberId}/latest-commit:
+    get:
+      tags:
+      - rollup-controller
+      summary: Resolve a report's latest reviewable commit id (dashboard drill-through
+        → review)
+      operationId: latestReviewableCommit
+      parameters:
+      - name: memberId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+  /api/review-queue:
+    get:
+      tags:
+      - review-queue-controller
+      summary: "The acting manager's review queue for a week (Pageable, capped at\
+        \ 2000)"
+      operationId: queue
+      parameters:
+      - name: weekStart
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseReviewQueueRow"
+  /api/rcdo/tree:
+    get:
+      tags:
+      - rcdo-controller
+      summary: The nested 4-level RCDO tree (requires an authenticated caller)
+      operationId: tree
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RallyCryNode"
+  /api/rcdo/supporting-outcomes:
+    get:
+      tags:
+      - rcdo-controller
+      summary: Supporting outcomes filtered by a case-insensitive title query
+      operationId: supportingOutcomes
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupportingOutcomeDto"
+  /api/integration/outlook:
+    get:
+      tags:
+      - outlook-controller
+      summary: The acting member's Outlook connection + sync preference
+      operationId: connection
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OutlookConnectionDto"
+    delete:
+      tags:
+      - outlook-controller
+      summary: Disconnect Outlook (forget the delegated token)
+      operationId: disconnect
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OutlookConnectionDto"
+  /api/graph/status:
+    get:
+      tags:
+      - graph-consent-controller
+      summary: Whether the acting member has connected Outlook
+      operationId: status
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+  /api/graph/connect:
+    get:
+      tags:
+      - graph-consent-controller
+      summary: "Begin Outlook consent: redirect to the Entra authorize URL (signed\
+        \ state)"
+      operationId: connect_1
+      responses:
+        "200":
+          description: OK
+  /api/graph/callback:
+    get:
+      tags:
+      - graph-consent-controller
+      summary: "Outlook consent callback: verify state, exchange the code, store the\
+        \ token"
+      operationId: callback
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+  /api/commits/{id}/reconciliation:
+    get:
+      tags:
+      - reconciliation-controller
+      summary: Planned (snapshot) vs actual (live status) diff with per-row flags
+      operationId: reconciliation
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReconciliationView"
+  /api/commits/current:
+    get:
+      tags:
+      - commit-controller
+      summary: "The acting member's current open week, or 204 when none exists yet"
+      operationId: current
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CommitDto"
+components:
+  schemas:
+    OutlookSettingsRequest:
+      required:
+      - createEventOnLock
+      type: object
+      properties:
+        createEventOnLock:
+          type: boolean
+    OutlookConnectionDto:
+      type: object
+      properties:
+        status:
+          type: string
+        account:
+          type: string
+        lastSyncAt:
+          type: string
+          format: date-time
+        createEventOnLock:
+          type: boolean
+    CommitItemRequest:
+      required:
+      - text
+      type: object
+      properties:
+        text:
+          maxLength: 1000
+          minLength: 0
+          type: string
+        supportingOutcomeId:
+          type: string
+          format: uuid
+        chessTier:
+          type: string
+          enum:
+          - KING
+          - QUEEN
+          - ROOK
+          - BISHOP
+          - KNIGHT
+          - PAWN
+    UpdateCommitRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommitItemRequest"
+    CommitDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        weekStart:
+          type: string
+          format: date
+        lifecycleState:
+          type: string
+          enum:
+          - DRAFT
+          - LOCKED
+          - RECONCILING
+          - RECONCILED
+          - CARRY_FORWARD
+        submittedAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommitItemDto"
+    CommitItemDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        status:
+          type: string
+          enum:
+          - OPEN
+          - COMPLETE
+          - INCOMPLETE
+          - CARRIED_FORWARD
+        supportingOutcomeId:
+          type: string
+          format: uuid
+        chessTier:
+          type: string
+          enum:
+          - KING
+          - QUEEN
+          - ROOK
+          - BISHOP
+          - KNIGHT
+          - PAWN
+        carriedFromItemId:
+          type: string
+          format: uuid
+    PulseRequest:
+      required:
+      - rating
+      type: object
+      properties:
+        rating:
+          maximum: 5
+          minimum: 1
+          type: integer
+          format: int32
+        comment:
+          maxLength: 2000
+          minLength: 0
+          type: string
+        privateToManager:
+          type: boolean
+    PulseDto:
+      type: object
+      properties:
+        rating:
+          type: integer
+          format: int32
+        comment:
+          type: string
+        privateToManager:
+          type: boolean
+    OutlookConnectResponse:
+      type: object
+      properties:
+        authorizationUrl:
+          type: string
+    CreateCommitRequest:
+      required:
+      - weekStart
+      type: object
+      properties:
+        weekStart:
+          type: string
+          format: date
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommitItemRequest"
+        memberId:
+          type: string
+          format: uuid
+    ReviewRequest:
+      required:
+      - state
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+          - UNREVIEWED
+          - INCOMPLETE
+          - REVIEWED
+        comment:
+          maxLength: 2000
+          minLength: 0
+          type: string
+    ReviewDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        weeklyCommitId:
+          type: string
+          format: uuid
+        reviewerId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+          - UNREVIEWED
+          - INCOMPLETE
+          - REVIEWED
+        comment:
+          type: string
+        reviewedAt:
+          type: string
+          format: date-time
+    ItemStatusPatch:
+      required:
+      - status
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - OPEN
+          - COMPLETE
+          - INCOMPLETE
+          - CARRIED_FORWARD
+    PageResponseRollupRow:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/RollupRow"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+    RollupRow:
+      type: object
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        memberName:
+          type: string
+        commitCount:
+          type: integer
+          format: int32
+        itemCount:
+          type: integer
+          format: int32
+        completionPct:
+          type: number
+          format: double
+        carryOverRate:
+          type: number
+          format: double
+        rcdoAlignmentPct:
+          type: number
+          format: double
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    PageResponseReviewQueueRow:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewQueueRow"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        number:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+    ReviewQueueRow:
+      type: object
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        memberName:
+          type: string
+        commitId:
+          type: string
+          format: uuid
+        lifecycleState:
+          type: string
+          enum:
+          - DRAFT
+          - LOCKED
+          - RECONCILING
+          - RECONCILED
+          - CARRY_FORWARD
+        overdue:
+          type: boolean
+        itemCount:
+          type: integer
+          format: int32
+        completedCount:
+          type: integer
+          format: int32
+        reviewState:
+          type: string
+          enum:
+          - UNREVIEWED
+          - INCOMPLETE
+          - REVIEWED
+    DefiningObjectiveNode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        outcomes:
+          type: array
+          items:
+            $ref: "#/components/schemas/OutcomeNode"
+    OutcomeNode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        supportingOutcomes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupportingOutcomeDto"
+    RallyCryNode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        definingObjectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefiningObjectiveNode"
+    SupportingOutcomeDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        outcomeId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        ownerId:
+          type: string
+          format: uuid
+    WeekSummary:
+      type: object
+      properties:
+        commitId:
+          type: string
+          format: uuid
+        weekStart:
+          type: string
+          format: date
+        lifecycleState:
+          type: string
+          enum:
+          - DRAFT
+          - LOCKED
+          - RECONCILING
+          - RECONCILED
+          - CARRY_FORWARD
+        itemCount:
+          type: integer
+          format: int32
+        completedCount:
+          type: integer
+          format: int32
+        carriedInCount:
+          type: integer
+          format: int32
+    ReconciliationRow:
+      type: object
+      properties:
+        commitItemId:
+          type: string
+          format: uuid
+        plannedText:
+          type: string
+        plannedTier:
+          type: string
+          enum:
+          - KING
+          - QUEEN
+          - ROOK
+          - BISHOP
+          - KNIGHT
+          - PAWN
+        supportingOutcomeId:
+          type: string
+          format: uuid
+        actualStatus:
+          type: string
+          enum:
+          - OPEN
+          - COMPLETE
+          - INCOMPLETE
+          - CARRIED_FORWARD
+        flag:
+          type: string
+          enum:
+          - COMPLETED
+          - INCOMPLETE
+          - CARRIED
+          - ADDED_AFTER_LOCK
+    ReconciliationView:
+      type: object
+      properties:
+        commitId:
+          type: string
+          format: uuid
+        lifecycleState:
+          type: string
+          enum:
+          - DRAFT
+          - LOCKED
+          - RECONCILING
+          - RECONCILED
+          - CARRY_FORWARD
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReconciliationRow"
