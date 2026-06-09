@@ -2,13 +2,68 @@
 // design (prototype/wcm/page-auth.jsx). RequireAuth shows the auth-resolving skeleton while loading
 // and, when unauthenticated, the design's standalone "Plan your week" sign-in screen (floating orbs +
 // Continue with Microsoft / SSO). Real sign-in is host/Auth0-owned — both buttons just call login()
-// (defers to Auth0 when standalone, to the host when embedded). RequireManager gates manager-only
-// screens with a non-punitive "Manager view" EmptyState. Real authorization is server-side; these are
-// UX affordances only (brief §6.1). Preserves testids: auth-loading, auth-required, auth-signin,
-// manager-required.
+// (defers to Auth0 when standalone, to the host when embedded). In the hermetic demo build ONLY
+// (isE2e(), KTD13) the sign-in panel also shows the CB-2 "Demo personas" bypass: one ghost button per
+// seeded persona that persists the hermetic identity and reloads — never rendered on the real Auth0
+// path. RequireManager gates manager-only screens with a non-punitive "Manager view" EmptyState. Real
+// authorization is server-side; these are UX affordances only (brief §6.1). Preserves testids:
+// auth-loading, auth-required, auth-signin, manager-required; adds demo-bypass + demo-login-<slug>.
 import type { ReactNode } from 'react';
-import { EmptyState, Icon, Skeleton } from '@wcm/ui';
+import { Avatar, EmptyState, Icon, Skeleton } from '@wcm/ui';
 import { useWcAuth } from './AuthBridge';
+import {
+  DEMO_PERSONAS,
+  identityOf,
+  isE2e,
+  persistE2eIdentity,
+  setE2eSignedOut,
+  type DemoPersona,
+} from './e2eAuth';
+
+/**
+ * Demo bypass (CB-2): persist the persona as the hermetic identity (same localStorage keys the
+ * `?member=` seam writes), clear the hermetic signed-out flag (this IS the sign-in), and hard-reload
+ * to '/' so auth + RTK Query re-resolve cleanly as them.
+ */
+function loginAsPersona(p: DemoPersona): void {
+  setE2eSignedOut(false);
+  persistE2eIdentity(identityOf(p));
+  window.location.assign('/');
+}
+
+/**
+ * The "Demo personas" quick-login section, rendered under the Auth0 buttons ONLY in the hermetic
+ * demo build (isE2e()). One small ghost button per seeded persona; clicking signs in WITHOUT the
+ * Auth0 round-trip via the existing debug-member seam.
+ */
+function DemoBypass(): JSX.Element {
+  return (
+    <div
+      data-testid="demo-bypass"
+      style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}
+    >
+      <div className="kicker" style={{ textAlign: 'center', marginBottom: 10 }}>
+        Demo personas
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+        {DEMO_PERSONAS.map((p) => (
+          <button
+            key={p.slug}
+            type="button"
+            className="btn btn-ghost btn-sm lift"
+            data-testid={`demo-login-${p.slug}`}
+            onClick={() => loginAsPersona(p)}
+            style={{ gap: 7, paddingLeft: 8 }}
+          >
+            <Avatar name={p.name} hue={p.hue} size={18} />
+            {p.name}
+            {p.role ? <span style={{ color: 'var(--ink-faint)' }}>· {p.role}</span> : null}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export interface RequireAuthProps {
   children: ReactNode;
@@ -147,6 +202,7 @@ export function RequireAuth({ children }: RequireAuthProps): JSX.Element {
             >
               <Icon.lock size={12} aria-hidden /> Secured by Auth0 · Authorization Code + PKCE
             </div>
+            {isE2e() ? <DemoBypass /> : null}
           </div>
           <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--ink-faint)' }}>
             You'll be redirected to your identity provider.

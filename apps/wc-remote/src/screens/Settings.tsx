@@ -29,6 +29,7 @@ import {
   Skeleton,
   Toggle,
 } from '@wcm/ui';
+import { isE2e, setE2eSignedOut } from '../app/e2eAuth';
 
 /** Redirect the browser to the Graph consent URL. Indirected so tests can spy on navigation. */
 export function redirectTo(url: string): void {
@@ -265,7 +266,16 @@ function AccountTab({ onSignOut }: { onSignOut?: () => void }): JSX.Element {
         <button
           type="button"
           className="btn btn-danger lift"
-          onClick={() => onSignOut?.()}
+          onClick={() => {
+            // Hermetic demo build: "Sign out" sets the e2e signed-out flag and reloads, surfacing
+            // the standalone login screen + demo bypass (CB-2 loop). Real builds defer to the host.
+            if (isE2e()) {
+              setE2eSignedOut(true);
+              window.location.assign('/');
+              return;
+            }
+            onSignOut?.();
+          }}
           data-testid="account-sign-out"
         >
           <Icon.unlock size={15} aria-hidden /> Sign out

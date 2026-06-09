@@ -8,7 +8,9 @@
 // manager sub-row, reads isManager + the live unreviewed count, and wires the shell's navigate
 // callbacks back to react-router. Props are optional so the remote also runs standalone; the host
 // injects getToken + user when embedded. The router defaults to MemoryRouter unless a host passes one
-// in (keeps the remote from fighting the host's history when embedded / under test).
+// in (keeps the remote from fighting the host's history when embedded / under test). In the hermetic
+// demo build ONLY (isE2e(), KTD13) the authenticated region also mounts the CB-2 PersonaPill — the
+// floating bottom-right demo account switcher; never rendered on the real Auth0/host path.
 import type { ReactNode } from 'react';
 import {
   MemoryRouter,
@@ -25,6 +27,8 @@ import { AppProviders } from './app/AppProviders';
 import { RequireAuth } from './app/guards';
 import { useWcAuth } from './app/AuthBridge';
 import { WcRoutes } from './app/routes';
+import { isE2e } from './app/e2eAuth';
+import { PersonaPill } from './app/PersonaPill';
 
 export interface WeeklyCommitAppProps {
   /** Optional access-token provider injected by the host shell (absent when standalone). */
@@ -112,7 +116,12 @@ export function WeeklyCommitApp({
   const wrap = router ?? ((children: ReactNode) => <MemoryRouter>{children}</MemoryRouter>);
   return (
     <AppProviders hostGetToken={getToken} hostUser={user}>
-      <RequireAuth>{wrap(<WcShell />)}</RequireAuth>
+      <RequireAuth>
+        {wrap(<WcShell />)}
+        {/* CB-2 demo account switcher — hermetic demo build only (KTD13), and only once authed
+            (RequireAuth children render only when authenticated). */}
+        {isE2e() ? <PersonaPill /> : null}
+      </RequireAuth>
     </AppProviders>
   );
 }

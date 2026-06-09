@@ -12,7 +12,12 @@ import {
 } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { setTokenGetter, clearTokenGetter, setDebugMember } from '@wcm/api';
-import { isE2e, resolveE2eIdentity } from './e2eAuth';
+import {
+  isE2e,
+  isE2eSignedOut,
+  resolveE2eIdentity,
+  setE2eSignedOut,
+} from './e2eAuth';
 
 export interface AuthContextValue {
   /** Resolve a Bearer access token, or null when unauthenticated/unconfigured. */
@@ -61,16 +66,22 @@ export function AuthBridge({
   const value = useMemo<AuthContextValue>(() => {
     // HERMETIC E2E (KTD13): a real browser drives the federated app with NO Auth0. The acting member
     // (and manager flag) come from the E2E identity (localStorage / URL param); @wcm/api sends it as
-    // the X-Debug-Member header. Auto-authenticated so the app renders past RequireAuth immediately.
+    // the X-Debug-Member header. Auto-authenticated so the app renders past RequireAuth immediately —
+    // UNLESS the hermetic signed-out flag is set (pill/Settings "Sign out"), which surfaces the
+    // standalone login screen + its demo-persona bypass (CB-2). login() clears the flag and reloads,
+    // signing back in as the persisted identity.
     if (isE2e()) {
       const id = resolveE2eIdentity();
       return {
         getToken: async () => null, // header path: no Bearer token in E2E
-        isAuthenticated: true,
+        isAuthenticated: !isE2eSignedOut(),
         isLoading: false,
         userName: id.name,
         isManager: id.isManager,
-        login: () => undefined,
+        login: () => {
+          setE2eSignedOut(false);
+          window.location.assign('/');
+        },
       };
     }
     if (hostGetToken) {
