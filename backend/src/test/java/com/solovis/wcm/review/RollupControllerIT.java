@@ -146,14 +146,17 @@ class RollupControllerIT extends AbstractWebIT {
       report("pageRep" + i, mgr);
     }
 
-    // Page 0, size 2 -> 2 rows, totalElements 5. PagedModel nests paging metadata under "page".
+    // Page 0, size 2 -> 2 rows, totalElements 5. The FLAT PageResponse envelope (matching the FE's
+    // TS Page<T> contract) carries totalElements/size/number at the TOP level (not nested under
+    // "page" like Spring's PagedModel) — the deliberate shape change the dashboard reads directly.
     mockMvc
         .perform(get("/api/rollup").param("page", "0").param("size", "2").with(as(mgr)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.content.length()").value(2))
-        .andExpect(jsonPath("$.page.totalElements").value(5))
-        .andExpect(jsonPath("$.page.size").value(2))
-        .andExpect(jsonPath("$.page.number").value(0));
+        .andExpect(jsonPath("$.totalElements").value(5))
+        .andExpect(jsonPath("$.totalPages").value(3))
+        .andExpect(jsonPath("$.size").value(2))
+        .andExpect(jsonPath("$.number").value(0));
 
     // Page 2, size 2 -> the trailing single row.
     mockMvc

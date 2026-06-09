@@ -6,6 +6,7 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { Skeleton } from '@wcm/ui';
+import { useLazyGetReportLatestCommitQuery } from '@wcm/api';
 import { RequireManager } from './guards';
 
 // Lazy screen chunks (code-split). Each resolves the named export to a default for React.lazy.
@@ -111,9 +112,20 @@ function ReviewDetailRoute(): JSX.Element {
 
 function DashboardRoute(): JSX.Element {
   const nav = useNavigate();
+  // Deferred-fix: a dashboard drill-through must open the REPORT'S REVIEW, not the queue. The row
+  // gives a memberId; resolve that report's latest reviewable commit, then route to its review detail.
+  // On a miss (report has no locked week) fall back to the queue so the click is never a dead end.
+  const [resolveLatest] = useLazyGetReportLatestCommitQuery();
   return (
     <RequireManager>
-      <RollupDashboard onDrillThrough={() => nav('/manager')} />
+      <RollupDashboard
+        onDrillThrough={(memberId) => {
+          void resolveLatest(memberId)
+            .unwrap()
+            .then((res) => nav(`/manager/review/${res.commitId}`))
+            .catch(() => nav('/manager'));
+        }}
+      />
     </RequireManager>
   );
 }

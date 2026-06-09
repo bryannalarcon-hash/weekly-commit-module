@@ -15,6 +15,7 @@ import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -31,7 +32,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
+// NOT active under the "e2e" profile: the hermetic E2E path (E2eSecurityConfig) replaces this
+// JWT-backed chain with an X-Debug-Member header authenticator (KTD13), so a real browser can
+// drive the federated app without an Auth0 tenant. Prod/default/test keep this JWT-only chain.
 @Configuration
+@Profile("!e2e")
 public class SecurityConfig {
 
   /** Auth0 permission required by manager-only routes (mapped to a SCOPE_ authority). */
@@ -57,9 +62,11 @@ public class SecurityConfig {
                     // (GraphConsentState HMAC + expiry) it verifies to derive the acting member.
                     .requestMatchers(HttpMethod.GET, "/api/graph/callback")
                     .permitAll()
-                    // Manager-only routes: rollup, per-commit review, and the reconcile
-                    // transitions.
+                    // Manager-only routes: rollup, the review queue, per-commit review, and the
+                    // reconcile transitions.
                     .requestMatchers(HttpMethod.GET, "/api/rollup", "/api/rollup/**")
+                    .hasAuthority(MANAGER_SCOPE)
+                    .requestMatchers(HttpMethod.GET, "/api/review-queue")
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/review")
                     .hasAuthority(MANAGER_SCOPE)

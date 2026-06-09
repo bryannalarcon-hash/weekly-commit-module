@@ -5,7 +5,7 @@
 // (a Draft commit cannot be reconciled — guide back), in-progress (RECONCILING — status editable),
 // reconciled (read-only), error. The carry-forward action (confirm + optimistic mutation) moves
 // incomplete items into next week. All data + mutations via RTK Query.
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Select } from 'flowbite-react';
 import type {
   CommitItemStatus,
@@ -54,6 +54,38 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
   const [markReconciled, reconciledState] = useMarkReconciledMutation();
   const [carryForward, carryState] = useCarryForwardMutation();
   const [carryOpen, setCarryOpen] = useState(false);
+  // Local optimistic status per item so the Select reflects the user's choice immediately while the
+  // debounced PATCH + refetch is in flight (otherwise the controlled value snaps back to the server's).
+  const [localStatus, setLocalStatus] = useState<Record<string, CommitItemStatus>>({});
+
+  // Deferred-fix: debounce the per-item status PATCH so a fast toggle through the Select options
+  // coalesces into a single request, avoiding the flicker / fast-toggle race (each PATCH invalidates
+  // the reconciliation cache → refetch). Timers are keyed by itemId and cleared on unmount.
+  const statusTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  useEffect(() => {
+    const timers = statusTimers.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
+
+  const queueStatusChange = useCallback(
+    (itemId: string, status: CommitItemStatus) => {
+      setLocalStatus((prev) => ({ ...prev, [itemId]: status }));
+      const timers = statusTimers.current;
+      const existing = timers.get(itemId);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        itemId,
+        setTimeout(() => {
+          timers.delete(itemId);
+          void patchStatus({ commitId, itemId, body: { status } });
+        }, 300),
+      );
+    },
+    [commitId, patchStatus],
+  );
 
   if (isLoading) {
     return (
@@ -132,9 +164,8 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
             key={row.commitItemId}
             row={row}
             editable={editable}
-            onStatusChange={(status) =>
-              void patchStatus({ commitId, itemId: row.commitItemId, body: { status } })
-            }
+            statusValue={localStatus[row.commitItemId] ?? row.actualStatus ?? 'OPEN'}
+            onStatusChange={(status) => queueStatusChange(row.commitItemId, status)}
           />
         ))}
       </ul>
@@ -184,11 +215,13 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
 interface ReconRowProps {
   row: ReconciliationRow;
   editable: boolean;
+  /** The Select's controlled value (local optimistic choice, else the server's actual). */
+  statusValue: CommitItemStatus;
   onStatusChange: (status: CommitItemStatus) => void;
 }
 
 /** One planned-vs-actual comparison row. */
-function ReconRow({ row, editable, onStatusChange }: ReconRowProps): JSX.Element {
+function ReconRow({ row, editable, statusValue, onStatusChange }: ReconRowProps): JSX.Element {
   const flag = FLAG_META[row.flag];
   return (
     <li
@@ -226,7 +259,7 @@ function ReconRow({ row, editable, onStatusChange }: ReconRowProps): JSX.Element
           {editable && (
             <Select
               sizing="sm"
-              value={row.actualStatus ?? 'OPEN'}
+              value={statusValue}
               aria-label="Set actual status"
               data-testid="recon-status-select"
               onChange={(e) => onStatusChange(e.target.value as CommitItemStatus)}

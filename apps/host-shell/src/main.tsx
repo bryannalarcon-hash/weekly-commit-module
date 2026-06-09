@@ -1,17 +1,9 @@
-// apps/host-shell/src/main.tsx — standalone mount for the WCM dev host shell.
-// Renders App into #root; federation wiring of the WC remote arrives in a later unit.
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { App } from './App';
-import './index.css';
-
-const container = document.getElementById('root');
-if (!container) {
-  throw new Error('Root container #root not found');
-}
-
-createRoot(container).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// apps/host-shell/src/main.tsx — host entry. Uses the standard Module Federation ASYNC BOUNDARY: it
+// dynamically imports ./bootstrap so the federation runtime + shared singletons (react/react-dom)
+// initialize before any code that statically references the shared modules executes. Without this
+// deferral a host that eagerly imports shared deps can race the MF runtime init.
+import('./bootstrap').catch((err) => {
+  // A failure here means the federation runtime itself could not start — make it visible.
+  // eslint-disable-next-line no-console
+  console.error('host bootstrap failed', err);
+});

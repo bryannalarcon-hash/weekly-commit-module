@@ -8,6 +8,7 @@ package com.solovis.wcm.commit;
 import com.solovis.wcm.commit.dto.CommitDto;
 import com.solovis.wcm.commit.dto.CreateCommitRequest;
 import com.solovis.wcm.commit.dto.UpdateCommitRequest;
+import com.solovis.wcm.commit.dto.WeekSummary;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -38,10 +39,19 @@ public class CommitController {
     return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
   }
 
-  @Operation(summary = "List the acting member's own weekly commits")
+  @Operation(summary = "List the acting member's own weekly commits as compact week headers")
   @GetMapping
-  public List<CommitDto> listMine() {
+  public List<WeekSummary> listMine() {
     return service.listMine();
+  }
+
+  @Operation(summary = "The acting member's current open week, or 204 when none exists yet")
+  @GetMapping("/current")
+  public ResponseEntity<CommitDto> current() {
+    return service
+        .currentWeek()
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.noContent().build());
   }
 
   @Operation(summary = "Read a weekly commit (ownership-checked: 403 if not the acting member's)")

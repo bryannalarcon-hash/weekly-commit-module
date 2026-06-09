@@ -1,22 +1,32 @@
 // CommitService — application service for the weekly-commit CRUD + submit (U11). Orchestrates the
-// repositories and the pure LifecycleService, and enforces the two non-negotiable rules: the owner
-// is ALWAYS the CurrentMemberProvider's acting member (never a body field, KTD6), and every
-// GET/PUT/submit runs a row-level ownership check (ForbiddenException on mismatch). submit() locks
-// via the FSM, persists the frozen snapshot, and publishes the commit.locked domain event (U26).
+// repositories and the pure LifecycleService, and enforces row-level authorization (KTD6): the
+// owner
+// is ALWAYS the CurrentMemberProvider's acting member (never a body field); PUT/submit are
+// OWNER-only
+// (loadOwned → 403), while GET is readable by the owner OR the owner's MANAGER (loadOwnerOrManager,
+// so the manager review-detail screen can load a report's locked commit — a manager reaches only
+// their own reports). submit() locks via the FSM, persists the frozen snapshot, and publishes the
+// commit.locked domain event (U26).
 package com.solovis.wcm.commit;
 
 import com.solovis.wcm.commit.dto.CommitDto;
 import com.solovis.wcm.commit.dto.CommitItemRequest;
 import com.solovis.wcm.commit.dto.CreateCommitRequest;
 import com.solovis.wcm.commit.dto.UpdateCommitRequest;
+import com.solovis.wcm.commit.dto.WeekSummary;
 import com.solovis.wcm.common.CurrentMemberProvider;
 import com.solovis.wcm.common.ForbiddenException;
 import com.solovis.wcm.common.ResourceNotFoundException;
 import com.solovis.wcm.common.UnprocessableEntityException;
 import com.solovis.wcm.event.DomainEvent;
 import com.solovis.wcm.event.EventPublisher;
+import com.solovis.wcm.member.Member;
+import com.solovis.wcm.member.MemberRepository;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +40,7 @@ public class CommitService {
   private final SnapshotItemRepository snapshotItems;
   private final LifecycleService lifecycle;
   private final CurrentMemberProvider currentMember;
+  private final MemberRepository members;
   private final EventPublisher events;
 
   public CommitService(
@@ -39,6 +50,7 @@ public class CommitService {
       SnapshotItemRepository snapshotItems,
       LifecycleService lifecycle,
       CurrentMemberProvider currentMember,
+      MemberRepository members,
       EventPublisher events) {
     this.commits = commits;
     this.items = items;
@@ -46,6 +58,7 @@ public class CommitService {
     this.snapshotItems = snapshotItems;
     this.lifecycle = lifecycle;
     this.currentMember = currentMember;
+    this.members = members;
     this.events = events;
   }
 
@@ -64,20 +77,41 @@ public class CommitService {
     return CommitDto.from(commit, saved);
   }
 
-  /** GET /commits/{id} — ownership-checked read of a commit and its items. */
+  /**
+   * GET /commits/{id} — read a commit and its items. Readable by the OWNER, OR by the owner's
+   * MANAGER (so the manager review-detail screen can load a report's locked commit; KTD6 row-level:
+   * a manager reaches only their own reports' commits). Any other member → 403.
+   */
   @Transactional(readOnly = true)
   public CommitDto get(UUID commitId) {
-    WeeklyCommit commit = loadOwned(commitId);
+    WeeklyCommit commit = loadOwnerOrManager(commitId);
     return CommitDto.from(commit, items.findByWeeklyCommitId(commitId));
   }
 
-  /** GET /commits — the acting member's own commits (headers only, items omitted for the list). */
+  /**
+   * GET /commits — the acting member's own commits projected to WeekSummary headers (counts only),
+   * newest week first. The full item list is fetched per-commit only when a screen opens it.
+   */
   @Transactional(readOnly = true)
-  public List<CommitDto> listMine() {
+  public List<WeekSummary> listMine() {
     UUID ownerId = currentMember.currentMemberId();
     return commits.findByMemberId(ownerId).stream()
-        .map(c -> CommitDto.from(c, items.findByWeeklyCommitId(c.getId())))
+        .sorted(Comparator.comparing(WeeklyCommit::getWeekStart).reversed())
+        .map(c -> WeekSummary.from(c, items.findByWeeklyCommitId(c.getId())))
         .toList();
+  }
+
+  /**
+   * GET /commits/current — the acting member's most-recent OPEN week (any state but CARRY_FORWARD),
+   * or empty when none exists yet (the controller renders 204 → the "Start your week" empty state).
+   */
+  @Transactional(readOnly = true)
+  public Optional<CommitDto> currentWeek() {
+    UUID ownerId = currentMember.currentMemberId();
+    return commits.findByMemberId(ownerId).stream()
+        .filter(c -> c.getLifecycleState() != LifecycleState.CARRY_FORWARD)
+        .max(Comparator.comparing(WeeklyCommit::getWeekStart))
+        .map(c -> CommitDto.from(c, items.findByWeeklyCommitId(c.getId())));
   }
 
   /**
@@ -123,6 +157,29 @@ public class CommitService {
             .orElseThrow(() -> new ResourceNotFoundException("commit " + commitId + " not found"));
     if (!commit.getMemberId().equals(currentMember.currentMemberId())) {
       throw new ForbiddenException("commit " + commitId + " is not owned by the acting member");
+    }
+    return commit;
+  }
+
+  /**
+   * Load a commit or 404, then allow the acting member if they are the OWNER or the owner's MANAGER
+   * (the row-level rule for manager-visible reads — a manager only reaches their own reports). 403
+   * for anyone else.
+   */
+  private WeeklyCommit loadOwnerOrManager(UUID commitId) {
+    WeeklyCommit commit =
+        commits
+            .findById(commitId)
+            .orElseThrow(() -> new ResourceNotFoundException("commit " + commitId + " not found"));
+    Member acting = currentMember.currentMember();
+    boolean isOwner = commit.getMemberId().equals(acting.getId());
+    boolean isOwnersManager =
+        members
+            .findById(commit.getMemberId())
+            .map(owner -> Objects.equals(owner.getManagerId(), acting.getId()))
+            .orElse(false);
+    if (!isOwner && !isOwnersManager) {
+      throw new ForbiddenException("commit " + commitId + " is not visible to the acting member");
     }
     return commit;
   }

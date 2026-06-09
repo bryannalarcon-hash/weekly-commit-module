@@ -35,7 +35,7 @@ import {
   rollupTag,
   weekListTag,
 } from './tags';
-import { getAccessToken } from './tokenProvider';
+import { getAccessToken, getDebugMember } from './tokenProvider';
 
 /**
  * Resolve the API base. Defaults to `/api` (same-origin as the host), overridable at build via
@@ -58,13 +58,20 @@ function resolveApiBase(): string {
 const API_BASE: string = resolveApiBase();
 
 /**
- * fetchBaseQuery with a prepareHeaders that injects `Authorization: Bearer <token>` from the
- * injected token getter. Empty-safe: when no token is available (tests/standalone-no-auth) the
- * header is simply omitted, so the slice builds and tests run WITHOUT live Auth0.
+ * fetchBaseQuery with a prepareHeaders that injects auth. In the normal/prod/standalone path it sets
+ * `Authorization: Bearer <token>` from the injected token getter (empty-safe: omitted when no token,
+ * so the slice builds and tests run WITHOUT live Auth0). In the HERMETIC E2E path (KTD13) a debug
+ * member is registered (setDebugMember); then it sends `X-Debug-Member: <member>` and NO Bearer, so a
+ * real browser drives the federated app against the backend's @Profile("e2e") header authenticator.
  */
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE,
   prepareHeaders: async (headers) => {
+    const debugMember = getDebugMember();
+    if (debugMember) {
+      headers.set('X-Debug-Member', debugMember);
+      return headers;
+    }
     const token = await getAccessToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     return headers;
@@ -214,6 +221,14 @@ export const commitApi = createApi({
       providesTags: [rollupTag()],
     }),
 
+    /**
+     * Resolve a report's latest reviewable commit id, for the dashboard drill-through → review.
+     * Returns { commitId }; manager-gated + row-level authorized server-side.
+     */
+    getReportLatestCommit: build.query<{ commitId: string }, string>({
+      query: (memberId) => `/rollup/reports/${memberId}/latest-commit`,
+    }),
+
     /** The manager's review queue for a week: each report's submission status. */
     getReviewQueue: build.query<
       Page<ReviewQueueRow>,
@@ -293,6 +308,7 @@ export const {
   useLazySearchSupportingOutcomesQuery,
   useReviewCommitMutation,
   useGetRollupQuery,
+  useLazyGetReportLatestCommitQuery,
   useGetReviewQueueQuery,
   useGetPulseQuery,
   usePutPulseMutation,

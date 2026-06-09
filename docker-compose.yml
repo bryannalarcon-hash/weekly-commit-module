@@ -9,7 +9,8 @@ services:
       POSTGRES_USER: wcm
       POSTGRES_PASSWORD: wcm
     ports:
-      - "5432:5432"
+      # Host 5433 -> container 5432 (host 5432 is often already taken by another local PG).
+      - "5433:5432"
     volumes:
       - wcm-pgdata:/var/lib/postgresql/data
     healthcheck:

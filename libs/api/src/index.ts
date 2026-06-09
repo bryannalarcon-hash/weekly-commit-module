@@ -18,6 +18,8 @@ export {
   setTokenGetter,
   clearTokenGetter,
   getAccessToken,
+  setDebugMember,
+  getDebugMember,
   type TokenGetter,
 } from './tokenProvider';
 

@@ -64,6 +64,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!--
+          actuator: exposes /actuator/health — the liveness/readiness probe the SecurityConfig +
+          E2eSecurityConfig already permitAll, the E2E run-harness waits on, and the K8s deploy
+          (U29) wires to readiness/liveness. health-only exposure (see application.yml).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -309,6 +318,14 @@
                                 <exclude>**/WcmApplication.*</exclude>
                                 <exclude>**/*Config*</exclude>
                                 <exclude>**/AbstractAuditingEntity.*</exclude>
+                                <!--
+                                  Hermetic E2E-only scaffolding (@Profile("e2e"), KTD13): the
+                                  X-Debug-Member member provider and the per-scenario reset/inject
+                                  endpoint. Test-path infrastructure (like TestJwtConfig), never on
+                                  the prod request path, so excluded from the product coverage bar.
+                                -->
+                                <exclude>**/DebugHeaderCurrentMemberProvider.*</exclude>
+                                <exclude>**/E2eResetController.*</exclude>
                             </excludes>
                             <rules>
                                 <rule>

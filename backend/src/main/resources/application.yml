@@ -48,3 +48,14 @@ spring:
     # We use no Flyway placeholders; disabling replacement keeps a literal ${...} in any migration
     # comment/DDL from being mis-parsed as an unprovided placeholder (e.g. an env-ref mention).
     placeholder-replacement: false
+# Actuator: expose ONLY the health endpoint (liveness/readiness probe + E2E wait-on). Not the full
+# actuator surface — keep the operational footprint minimal. /actuator/health is permitAll in both
+# security chains.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

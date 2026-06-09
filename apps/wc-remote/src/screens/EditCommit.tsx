@@ -27,6 +27,7 @@ import type { ChessTier, CommitDto, CommitItemDto } from '@wcm/types';
 import {
   useGetCommitQuery,
   useGetPulseQuery,
+  useGetRcdoTreeQuery,
   usePutPulseMutation,
   useSubmitCommitMutation,
   useUpdateCommitMutation,
@@ -69,6 +70,10 @@ export interface EditCommitProps {
 export function EditCommit({ commitId, onLocked }: EditCommitProps): JSX.Element {
   const { data, isLoading, isError, refetch } = useGetCommitQuery(commitId);
   const { data: pulse } = useGetPulseQuery(commitId);
+  // The RCDO tree gives us the title for every Supporting Outcome, so a previously-linked item shows
+  // its real outcome name on load — not the generic "Linked outcome" (deferred fix). Picker selections
+  // this session still win via the local `titles` map below.
+  const { data: rcdoTree } = useGetRcdoTreeQuery();
   const [updateCommit] = useUpdateCommitMutation();
   const [submitCommit, submitState] = useSubmitCommitMutation();
   const [putPulse] = usePutPulseMutation();
@@ -210,6 +215,22 @@ export function EditCommit({ commitId, onLocked }: EditCommitProps): JSX.Element
 
   const canSubmit = blockers.length === 0;
 
+  // Flatten the RCDO tree to a SupportingOutcome id → title map, so a linked item loaded from the
+  // server resolves its real outcome name even when it wasn't picked this session.
+  const outcomeTitles = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const rally of rcdoTree ?? []) {
+      for (const dobj of rally.definingObjectives) {
+        for (const outcome of dobj.outcomes) {
+          for (const so of outcome.supportingOutcomes) {
+            map[so.id] = so.title;
+          }
+        }
+      }
+    }
+    return map;
+  }, [rcdoTree]);
+
   const doLock = (): void => {
     // Flush any pending/in-flight autosave FIRST so the lock freezes the just-edited plan, not a
     // stale one, and the late PUT cannot 409 against a now-LOCKED commit.
@@ -274,7 +295,11 @@ export function EditCommit({ commitId, onLocked }: EditCommitProps): JSX.Element
                 index={idx + 1}
                 total={items.length}
                 outcomeTitle={
-                  item.supportingOutcomeId ? titles[item.supportingOutcomeId] : null
+                  item.supportingOutcomeId
+                    ? (titles[item.supportingOutcomeId] ??
+                      outcomeTitles[item.supportingOutcomeId] ??
+                      null)
+                    : null
                 }
                 onTextChange={setText}
                 onTierChange={setTier}

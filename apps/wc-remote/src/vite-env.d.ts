@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_AUTH0_AUDIENCE?: string;
   readonly VITE_AUTH0_SCOPE?: string;
   readonly VITE_API_BASE?: string;
+  /** "true" enables the hermetic-E2E auth path (X-Debug-Member; auto-authenticated). KTD13. */
+  readonly VITE_E2E?: string;
 }
 
 interface ImportMeta {

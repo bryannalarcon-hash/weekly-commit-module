@@ -29,9 +29,20 @@
     <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
   </Match>
 
+  <!-- PageResponse: the flat page wire value object (a record with a List component), same
+       serialize-once immutable-in-practice pattern as the *.dto records (rationale #2). -->
+  <Match>
+    <Class name="com.solovis.wcm.common.PageResponse"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+
   <!-- Controllers storing injected services (see rationale #3). -->
   <Match>
     <Class name="com.solovis.wcm.commit.CommitController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.solovis.wcm.commit.PulseController"/>
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>
   <Match>

@@ -9,15 +9,19 @@ package com.solovis.wcm.review;
 import com.solovis.wcm.commit.CommitItem;
 import com.solovis.wcm.commit.CommitItemRepository;
 import com.solovis.wcm.commit.CommitItemStatus;
+import com.solovis.wcm.commit.LifecycleState;
 import com.solovis.wcm.commit.WeeklyCommit;
 import com.solovis.wcm.commit.WeeklyCommitRepository;
 import com.solovis.wcm.common.CurrentMemberProvider;
+import com.solovis.wcm.common.ForbiddenException;
+import com.solovis.wcm.common.ResourceNotFoundException;
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberRepository;
 import com.solovis.wcm.rcdo.RcdoRepository;
 import com.solovis.wcm.review.dto.RollupRow;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -71,6 +75,32 @@ public class RollupQueryService {
 
     List<RollupRow> rows = reports.subList(from, to).stream().map(this::rowFor).toList();
     return new PageImpl<>(rows, pageable, reports.size());
+  }
+
+  /**
+   * Resolve the commit a dashboard drill-through should open for {@code reportId}: that report's
+   * most recent reviewable (LOCKED or later) commit. Row-level authorized — the report MUST be a
+   * direct report of the acting manager (403 otherwise, KTD6) — so a manager can only drill into
+   * their own reports. 404 when the report has no reviewable week yet. This is the backend half of
+   * the deferred "dashboard drill-through navigates to the queue instead of the report's review"
+   * fix.
+   */
+  @Transactional(readOnly = true)
+  public UUID latestReviewableCommitId(UUID reportId) {
+    UUID managerId = currentMember.currentMemberId();
+    Member report =
+        members
+            .findById(reportId)
+            .orElseThrow(() -> new ResourceNotFoundException("member " + reportId + " not found"));
+    if (!Objects.equals(report.getManagerId(), managerId)) {
+      throw new ForbiddenException("member " + reportId + " is not a report of the acting manager");
+    }
+    return commits.findByMemberId(reportId).stream()
+        .filter(c -> c.getLifecycleState() != LifecycleState.DRAFT)
+        .max(Comparator.comparing(WeeklyCommit::getWeekStart))
+        .map(WeeklyCommit::getId)
+        .orElseThrow(
+            () -> new ResourceNotFoundException("report " + reportId + " has no reviewable week"));
   }
 
   /** Stable total order for reports: display name (case-insensitive), then the unique id. */

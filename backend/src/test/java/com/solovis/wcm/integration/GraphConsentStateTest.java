@@ -50,8 +50,13 @@ class GraphConsentStateTest {
   @Test
   void tamperedSignatureIsRejected() {
     String issued = state.issue(UUID.randomUUID());
-    String tampered =
-        issued.substring(0, issued.length() - 1) + flip(issued.charAt(issued.length() - 1));
+    // Tamper the FIRST character of the signature segment (right after the "." separator). The last
+    // base64url char of a 32-byte HMAC carries unused low bits, so flipping IT can decode to the
+    // same
+    // bytes (a flaky non-rejection); the first signature char always sits in significant bits.
+    int dot = issued.indexOf('.');
+    char sigStart = issued.charAt(dot + 1);
+    String tampered = issued.substring(0, dot + 1) + flip(sigStart) + issued.substring(dot + 2);
 
     assertThatThrownBy(() -> state.verify(tampered))
         .isInstanceOf(InvalidConsentStateException.class);

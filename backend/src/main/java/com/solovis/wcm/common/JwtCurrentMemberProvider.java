@@ -8,12 +8,16 @@ package com.solovis.wcm.common;
 
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberProvisioningService;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
+// NOT active under "e2e": the hermetic E2E path uses DebugHeaderCurrentMemberProvider, which
+// resolves the acting member from the X-Debug-Member header instead of a JWT subject (KTD13).
 @Component
+@Profile("!e2e")
 public class JwtCurrentMemberProvider implements CurrentMemberProvider {
 
   /** Common OIDC claim names used to seed a freshly provisioned Member. */

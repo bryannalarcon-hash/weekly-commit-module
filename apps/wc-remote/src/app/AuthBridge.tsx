@@ -11,7 +11,8 @@ import {
   type ReactNode,
 } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { setTokenGetter, clearTokenGetter } from '@wcm/api';
+import { setTokenGetter, clearTokenGetter, setDebugMember } from '@wcm/api';
+import { isE2e, resolveE2eIdentity } from './e2eAuth';
 
 export interface AuthContextValue {
   /** Resolve a Bearer access token, or null when unauthenticated/unconfigured. */
@@ -49,7 +50,29 @@ export function AuthBridge({
 }: AuthBridgeProps): JSX.Element {
   const auth0 = useAuth0();
 
+  // HERMETIC E2E: register the debug member SYNCHRONOUSLY during render (not in an effect) so the
+  // X-Debug-Member header is in place BEFORE any child screen's RTK Query first dispatches — a query
+  // firing on mount would otherwise race the effect and send an unauthenticated (header-less) request
+  // that 403s and never retries. Idempotent + cheap; the effect below keeps it in sync afterwards.
+  if (isE2e()) {
+    setDebugMember(resolveE2eIdentity().member);
+  }
+
   const value = useMemo<AuthContextValue>(() => {
+    // HERMETIC E2E (KTD13): a real browser drives the federated app with NO Auth0. The acting member
+    // (and manager flag) come from the E2E identity (localStorage / URL param); @wcm/api sends it as
+    // the X-Debug-Member header. Auto-authenticated so the app renders past RequireAuth immediately.
+    if (isE2e()) {
+      const id = resolveE2eIdentity();
+      return {
+        getToken: async () => null, // header path: no Bearer token in E2E
+        isAuthenticated: true,
+        isLoading: false,
+        userName: id.name,
+        isManager: id.isManager,
+        login: () => undefined,
+      };
+    }
     if (hostGetToken) {
       return {
         getToken: async () => {
@@ -87,9 +110,13 @@ export function AuthBridge({
     };
   }, [hostGetToken, hostUser, auth0]);
 
-  // Register the active getter with the data layer so RTK Query injects the Bearer token.
+  // Register the active getter with the data layer so RTK Query injects the Bearer token. In the
+  // hermetic E2E build, also register the debug member so prepareHeaders sends X-Debug-Member instead.
   useEffect(() => {
     setTokenGetter(value.getToken);
+    if (isE2e()) {
+      setDebugMember(resolveE2eIdentity().member);
+    }
     return () => clearTokenGetter();
   }, [value.getToken]);
 

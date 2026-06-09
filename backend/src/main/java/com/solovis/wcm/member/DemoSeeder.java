@@ -266,7 +266,13 @@ public class DemoSeeder implements CommandLineRunner {
 
   // --- Sample weekly commits across lifecycle states -------------------------------------------
 
-  private void seedSampleCommits() {
+  /**
+   * Seed the sample weekly commits across lifecycle states. Public +
+   * idempotent-by-truncate-then-seed so the E2E reset endpoint (E2eResetController) can restore the
+   * per-scenario baseline; the normal boot path calls it once via {@link #seed()}.
+   */
+  @Transactional
+  public void seedSampleCommits() {
     LocalDate currentWeek =
         LocalDate.now().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
     LocalDate priorWeek = currentWeek.minusWeeks(1);

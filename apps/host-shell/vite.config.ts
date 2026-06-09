@@ -23,12 +23,18 @@ export default defineConfig({
         wc: {
           type: 'module',
           name: 'wc',
-          entry: 'http://localhost:4201/remoteEntry.js',
+          // The remote's remoteEntry.js URL. Defaults to localhost:4201 for normal dev; the E2E
+          // harness sets VITE_REMOTE_ENTRY to host.docker.internal:4201 so the Dockerized browser
+          // (which can't reach the host's localhost) loads the remote via the host gateway.
+          entry: process.env.VITE_REMOTE_ENTRY ?? 'http://localhost:4201/remoteEntry.js',
         },
       },
       shared: {
         react: { singleton: true, requiredVersion: '^18.3.1' },
         'react-dom': { singleton: true, requiredVersion: '^18.3.1' },
+        // react-router-dom MUST be a singleton: the host provides the BrowserRouter context and the
+        // remote consumes useNavigate/useLocation from it — two copies would break the router context.
+        'react-router-dom': { singleton: true, requiredVersion: '^6.26.1' },
       },
     }),
   ],
@@ -38,8 +44,25 @@ export default defineConfig({
   },
   server: {
     port: 4200,
+    // allowedHosts: true so a Dockerized browser reaching the host via host.docker.internal isn't
+    // blocked by Vite's host check (the E2E harness). Same-origin /api → backend (8080) so the
+    // remote's RTK Query (baseUrl /api) reaches the API without CORS; WCM_API_TARGET overrides it.
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: process.env.WCM_API_TARGET ?? 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 4200,
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: process.env.WCM_API_TARGET ?? 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
   },
 });
