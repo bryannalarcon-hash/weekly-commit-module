@@ -18,11 +18,15 @@ import com.solovis.wcm.common.ResourceNotFoundException;
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberRepository;
 import com.solovis.wcm.rcdo.RcdoRepository;
+import com.solovis.wcm.rcdo.SupportingOutcome;
 import com.solovis.wcm.review.dto.RollupRow;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -72,8 +76,40 @@ public class RollupQueryService {
     int pageSize = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
     int from = (int) Math.min((long) pageable.getPageNumber() * pageSize, reports.size());
     int to = (int) Math.min((long) from + pageSize, reports.size());
+    List<Member> pageReports = reports.subList(from, to);
 
-    List<RollupRow> rows = reports.subList(from, to).stream().map(this::rowFor).toList();
+    // Batch-load this PAGE's data in a fixed number of queries (no per-report / per-commit round
+    // trips): commits for all page reports, then items for all those commits, then the valid RCDO
+    // SupportingOutcome ids once. This keeps the roll-up read O(few queries) at the 2000-record
+    // ceiling (NFR <200ms) instead of O(reports * commits) — identical metrics, far fewer queries.
+    List<UUID> reportIds = pageReports.stream().map(Member::getId).toList();
+    Map<UUID, List<WeeklyCommit>> commitsByMember =
+        reportIds.isEmpty()
+            ? Map.of()
+            : commits.findByMemberIdIn(reportIds).stream()
+                .collect(Collectors.groupingBy(WeeklyCommit::getMemberId));
+    List<UUID> commitIds =
+        commitsByMember.values().stream().flatMap(List::stream).map(WeeklyCommit::getId).toList();
+    Map<UUID, List<CommitItem>> itemsByCommit =
+        commitIds.isEmpty()
+            ? Map.of()
+            : items.findByWeeklyCommitIdIn(commitIds).stream()
+                .collect(Collectors.groupingBy(CommitItem::getWeeklyCommitId));
+    Set<UUID> validOutcomeIds =
+        rcdo.findAllSupportingOutcomes().stream()
+            .map(SupportingOutcome::getId)
+            .collect(Collectors.toSet());
+
+    List<RollupRow> rows =
+        pageReports.stream()
+            .map(
+                r ->
+                    rowFor(
+                        r,
+                        commitsByMember.getOrDefault(r.getId(), List.of()),
+                        itemsByCommit,
+                        validOutcomeIds))
+            .toList();
     return new PageImpl<>(rows, pageable, reports.size());
   }
 
@@ -109,11 +145,19 @@ public class RollupQueryService {
               Member::getDisplayName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
           .thenComparing(Member::getId);
 
-  private RollupRow rowFor(Member report) {
-    List<WeeklyCommit> reportCommits = commits.findByMemberId(report.getId());
+  /**
+   * Build one report's row from PRE-LOADED page data (no further queries). Metrics are identical to
+   * the prior per-report computation: completion = COMPLETE/total, carry-over = CARRIED_FORWARD/
+   * total, alignment = items whose SupportingOutcome id resolves in the live RCDO tree / total.
+   */
+  private RollupRow rowFor(
+      Member report,
+      List<WeeklyCommit> reportCommits,
+      Map<UUID, List<CommitItem>> itemsByCommit,
+      Set<UUID> validOutcomeIds) {
     List<CommitItem> allItems =
         reportCommits.stream()
-            .flatMap(c -> items.findByWeeklyCommitId(c.getId()).stream())
+            .flatMap(c -> itemsByCommit.getOrDefault(c.getId(), List.of()).stream())
             .toList();
 
     int total = allItems.size();
@@ -121,7 +165,7 @@ public class RollupQueryService {
         allItems.stream().filter(i -> i.getStatus() == CommitItemStatus.COMPLETE).count();
     long carried =
         allItems.stream().filter(i -> i.getStatus() == CommitItemStatus.CARRIED_FORWARD).count();
-    long aligned = allItems.stream().filter(this::isRcdoAligned).count();
+    long aligned = allItems.stream().filter(i -> isRcdoAligned(i, validOutcomeIds)).count();
 
     return new RollupRow(
         report.getId(),
@@ -134,9 +178,9 @@ public class RollupQueryService {
   }
 
   /** Aligned = linked to a SupportingOutcome that resolves in the live RCDO tree (active path). */
-  private boolean isRcdoAligned(CommitItem item) {
+  private static boolean isRcdoAligned(CommitItem item, Set<UUID> validOutcomeIds) {
     return item.getSupportingOutcomeId() != null
-        && rcdo.findSupportingOutcome(item.getSupportingOutcomeId()).isPresent();
+        && validOutcomeIds.contains(item.getSupportingOutcomeId());
   }
 
   private static double pct(long numerator, int total) {

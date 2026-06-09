@@ -48,6 +48,11 @@ e2e/test-results/
 e2e/playwright-report/
 e2e/.last-run.json
 
+# Test-result / coverage artifacts — generated per run (uploaded by CI), not source
+coverage/
+**/coverage/
+perf/k6-summary.json
+
 # Internal planning docs — kept local (like research/design); deliverable docs go in README/docs/TECHNICAL.md
 docs/plans/
 docs/planning/
