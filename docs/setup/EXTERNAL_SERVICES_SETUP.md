@@ -30,6 +30,20 @@ Do these when ready to wire the **live** integrations. Until then the app builds
 
 ## B. Microsoft Graph (Outlook delegated calendar)
 
+> **No Azure subscription needed.** A *subscription* is the billing container for Azure cloud
+> resources; **app registrations live in Entra ID (the directory), which is free**. If the M365
+> Developer Program or an Azure-subscription signup rejects you, use the personal-account path
+> below — it works with any free outlook.com account (which includes the calendar we sync to).
+
+**Path 1 — personal Microsoft account (no program, no subscription):**
+1. Use (or create at signup.live.com) a **free personal Microsoft account** (outlook.com — its mailbox includes the calendar Graph writes to).
+2. Sign in at **entra.microsoft.com** (ignore any "add a subscription" upsell — a free Default Directory tenant is created automatically).
+3. **App registrations → New registration**: supported account types = **"Accounts in any organizational directory and personal Microsoft accounts"** (key — lets the personal account consent). Redirect URI (Web): `http://localhost:8080/api/graph/callback`.
+4. **Certificates & secrets → New client secret** → `AZURE_CLIENT_SECRET` (🔒).
+5. **API permissions → Microsoft Graph → Delegated**: `Calendars.ReadWrite`, `User.Read`, `offline_access`. No admin-consent step — consent happens at sign-in.
+6. `.env`: `AZURE_CLIENT_ID` from the registration; **`AZURE_TENANT_ID=consumers`** (or `common`) — personal accounts don't use a directory tenant id.
+
+**Path 2 — M365 Developer tenant (if eligible):**
 1. Get a **free Microsoft 365 Developer tenant** (developer.microsoft.com/microsoft-365/dev-program) — instant Entra tenant + sample mailboxes for the demo.
 2. **Entra admin center → App registrations → New registration**:
    - Supported account types: *Accounts in this org directory only* (single tenant) is fine for the dev tenant.
