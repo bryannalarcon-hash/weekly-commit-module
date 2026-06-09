@@ -5,8 +5,11 @@
 // OWNER-only
 // (loadOwned → 403), while GET is readable by the owner OR the owner's MANAGER (loadOwnerOrManager,
 // so the manager review-detail screen can load a report's locked commit — a manager reaches only
-// their own reports). submit() locks via the FSM, persists the frozen snapshot, and publishes the
-// commit.locked domain event (U26).
+// their own reports). replaceItems validates each non-null supportingOutcomeId against the RCDO
+// leaf table (RcdoRepository) so a garbage/nonexistent/wrong-tier link is a 404 at the application
+// layer (NOT a misleading 409 from the DB FK). submit() rejects a zero-item commit as 422 before
+// the link check, locks via the FSM, persists the frozen snapshot, and publishes the commit.locked
+// domain event (U26).
 package com.solovis.wcm.commit;
 
 import com.solovis.wcm.commit.dto.CommitDto;
@@ -22,6 +25,7 @@ import com.solovis.wcm.event.DomainEvent;
 import com.solovis.wcm.event.EventPublisher;
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberRepository;
+import com.solovis.wcm.rcdo.RcdoRepository;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -41,6 +45,7 @@ public class CommitService {
   private final LifecycleService lifecycle;
   private final CurrentMemberProvider currentMember;
   private final MemberRepository members;
+  private final RcdoRepository rcdo;
   private final EventPublisher events;
 
   public CommitService(
@@ -51,6 +56,7 @@ public class CommitService {
       LifecycleService lifecycle,
       CurrentMemberProvider currentMember,
       MemberRepository members,
+      RcdoRepository rcdo,
       EventPublisher events) {
     this.commits = commits;
     this.items = items;
@@ -59,6 +65,7 @@ public class CommitService {
     this.lifecycle = lifecycle;
     this.currentMember = currentMember;
     this.members = members;
+    this.rcdo = rcdo;
     this.events = events;
   }
 
@@ -135,6 +142,12 @@ public class CommitService {
   public CommitDto submit(UUID commitId) {
     WeeklyCommit commit = loadOwned(commitId);
     hydrate(commit);
+    if (commit.getItems().isEmpty()) {
+      // Finding #12: a zero-item commit cannot submit. The unlinked-items message below is
+      // vacuously true for an empty commit, so check emptiness FIRST for a precise 422.
+      throw new UnprocessableEntityException(
+          "a weekly commit must have at least one item before submit");
+    }
     if (!commit.allItemsLinked()) {
       throw new UnprocessableEntityException(
           "every item must link a supporting outcome before submit");
@@ -184,8 +197,21 @@ public class CommitService {
     return commit;
   }
 
-  /** Delete the existing items and insert the requested set; returns the persisted items. */
+  /**
+   * Delete the existing items and insert the requested set; returns the persisted items. Each
+   * non-null supportingOutcomeId is validated against the RCDO LEAF table first (finding #1): a
+   * garbage/nonexistent id -> 404, and because the finder queries only supporting_outcome an
+   * Outcome/RallyCry id is rejected too (leaf-ness enforced). A null link is allowed (KTD5 —
+   * nullable until lock). Validating before any write keeps a bad link from reaching the DB FK and
+   * surfacing as a misleading 409.
+   */
   private List<CommitItem> replaceItems(UUID commitId, List<CommitItemRequest> requested) {
+    for (CommitItemRequest req : requested) {
+      UUID linkId = req.supportingOutcomeId();
+      if (linkId != null && rcdo.findSupportingOutcome(linkId).isEmpty()) {
+        throw new ResourceNotFoundException("supporting outcome " + linkId + " not found");
+      }
+    }
     items.deleteAll(items.findByWeeklyCommitId(commitId));
     for (CommitItemRequest req : requested) {
       items.save(

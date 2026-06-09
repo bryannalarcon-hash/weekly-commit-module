@@ -1,9 +1,10 @@
-// WeekStartBounds — a Bean Validation constraint bounding a weekly-commit weekStart to a sane
-// window
-// around "now" (deferred fix): rejects absurd far-past / far-future dates that would corrupt the
-// weekly model or roll-up windows. Validation lives in WeekStartBoundsValidator; a violation
-// surfaces
-// as a 400 (MethodArgumentNotValidException -> ApiExceptionHandler).
+// WeekStartBounds — a Bean Validation constraint on a weekly-commit weekStart. Enforces TWO rules:
+// (1) the date must be a Monday (the ISO week start) so "one commit per member per week" cannot be
+// bypassed by posting an in-week date; (2) it must fall within a sane window around "now" (rejects
+// absurd far-past / far-future dates). Validation lives in WeekStartBoundsValidator, which builds a
+// precise per-rule message; a violation surfaces as a 400 (MethodArgumentNotValidException ->
+// ApiExceptionHandler). Messages deliberately do NOT begin with "weekStart" (the handler prepends
+// the field name, so a "weekStart"-prefixed message would render the field name twice).
 package com.solovis.wcm.commit.dto;
 
 import jakarta.validation.Constraint;
@@ -26,7 +27,9 @@ public @interface WeekStartBounds {
   /** How many weeks into the FUTURE a weekStart may be (default ~2 years). */
   int maxWeeksInFuture() default 104;
 
-  String message() default "weekStart is outside the allowed range";
+  // Must NOT begin with "weekStart": the handler prepends the field name (finding #13). This is the
+  // fallback message; the validator overrides it per-rule via the ConstraintValidatorContext.
+  String message() default "is outside the allowed range";
 
   Class<?>[] groups() default {};
 
