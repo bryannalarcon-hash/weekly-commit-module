@@ -167,6 +167,10 @@
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-maven-plugin</artifactId>
                 <version>${spotbugs.version}</version>
+                <configuration>
+                    <!-- Narrow exclude: constructor-validation on entities (CT_CONSTRUCTOR_THROW). -->
+                    <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+                </configuration>
                 <executions>
                     <execution>
                         <id>spotbugs-check</id>
