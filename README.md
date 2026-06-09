@@ -25,6 +25,18 @@ build runs both **standalone** and **host-federated**.
 
 ---
 
+## Deliverables
+
+| Required deliverable | Where it lives |
+|---|---|
+| **SOURCE CODE** | this repository (`backend/`, `apps/`, `libs/`, `e2e/`, `perf/`) |
+| **TECHNICAL DOCUMENTATION** | [docs/TECHNICAL.md](docs/TECHNICAL.md) |
+| **DEMO VIDEO** | script in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) |
+| **TEST RESULTS** | the [test command matrix](#test-command-matrix-the-test-results-deliverable) below |
+| **AI USAGE LOG** | [AI_USAGE.md](AI_USAGE.md) |
+
+---
+
 ## Architecture
 
 ```mermaid

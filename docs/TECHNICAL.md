@@ -15,6 +15,12 @@ Outlook calendar event via Microsoft Graph.
 Package root: `com.solovis.wcm`. Frontend: an Nx-shaped `apps/*` + `libs/*` workspace; the feature
 ships as a **Vite Module Federation remote** (`wc-remote`) loaded by a thin `host-shell`.
 
+**Deliverables.** This file is the *TECHNICAL DOCUMENTATION* deliverable. The other four required
+deliverables: *SOURCE CODE* (this repo), *DEMO VIDEO* (`docs/DEMO_SCRIPT.md`), *TEST RESULTS* (the
+test command matrix in [README.md](../README.md) + §7 below), and the *AI USAGE LOG*
+([AI_USAGE.md](../AI_USAGE.md) — how Claude Code built the module, with usage numbers). The
+[README](../README.md#deliverables) maps each deliverable to its location.
+
 ---
 
 ## 1. Architecture by layer

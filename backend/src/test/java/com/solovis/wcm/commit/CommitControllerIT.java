@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -202,6 +203,74 @@ class CommitControllerIT extends AbstractWebIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void malformedJsonBodyIsBadRequestProblemJson() throws Exception {
+    // Regression (blind-QA HIGH): an unparseable body (HttpMessageNotReadableException) must
+    // surface
+    // as a 400 application/problem+json with a stable code — NOT a bare 403 empty response from the
+    // /error dispatch escaping the @RestControllerAdvice.
+    Member mal = member("mal");
+    mockMvc
+        .perform(
+            post("/api/commits")
+                .with(as(mal))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{bad json"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.code").value("malformed_request"));
+  }
+
+  @Test
+  void badEnumValueInBodyIsBadRequestProblemJson() throws Exception {
+    // Regression (blind-QA HIGH): an invalid enum literal fails Jackson deserialization
+    // (HttpMessageNotReadableException), which previously escaped as a 403. Must be 400
+    // problem+json.
+    Member mel = member("mel");
+    UUID soId = seedSupportingOutcome();
+    String body =
+        """
+        {"weekStart":"2026-06-08","items":[{"text":"x","supportingOutcomeId":"%s","chessTier":"NOTATIER"}]}
+        """
+            .formatted(soId);
+    mockMvc
+        .perform(
+            post("/api/commits")
+                .with(as(mel))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.code").value("malformed_request"));
+  }
+
+  @Test
+  void emptyBodyIsBadRequestProblemJson() throws Exception {
+    // Regression (blind-QA HIGH): an empty body is also unreadable -> 400 problem+json, not 403.
+    Member emp = member("emp");
+    mockMvc
+        .perform(
+            post("/api/commits").with(as(emp)).contentType(MediaType.APPLICATION_JSON).content(""))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.code").value("malformed_request"));
+  }
+
+  @Test
+  void unsupportedMediaTypeIsUnsupportedMediaTypeProblemJson() throws Exception {
+    // Regression (blind-QA HIGH): text/plain on a JSON route -> 415 problem+json, not a bare 403.
+    Member txt = member("txt");
+    mockMvc
+        .perform(
+            post("/api/commits")
+                .with(as(txt))
+                .contentType(MediaType.TEXT_PLAIN)
+                .content("not json"))
+        .andExpect(status().isUnsupportedMediaType())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.code").value("unsupported_media_type"));
   }
 
   @Test
