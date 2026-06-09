@@ -4,7 +4,8 @@
 // constraint collision (e.g. duplicate member+week) -> 409, unprocessable precondition (unlinked
 // submit) -> 422, an unverifiable Graph consent state -> 400, an UNCONFIGURED Graph integration
 // (missing token-enc-key) -> 503, bean-validation failures -> 400, @RequestParam constraint
-// violations -> 400, a missing required request parameter -> 400, an unknown route (no handler) ->
+// violations -> 400, a missing required request parameter -> 400, a param type mismatch -> 400, an
+// unknown route (no handler) ->
 // 404, an unsupported HTTP method -> 405, an unreadable/malformed request body -> 400, an
 // unsupported request media type -> 415. Each ProblemDetail carries a stable "type" URN
 // and a "code" property so the FE can branch on errors. The data-integrity handler is the backstop
@@ -31,6 +32,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 @RestControllerAdvice
@@ -192,6 +194,23 @@ public class ApiExceptionHandler {
         "Bad Request",
         "missing_parameter",
         "required parameter '" + ex.getParameterName() + "' is missing");
+  }
+
+  /**
+   * A {@code @RequestParam}/path variable could not be coerced to its target type (e.g. {@code
+   * ?page=abc} for an int). Renders 400 problem+json (code {@code bad_request}) with a GENERIC
+   * detail naming the parameter + expected type — deliberately NOT echoing the client's raw input
+   * string (Spring's default message does), for a tight, predictable contract.
+   */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ProblemDetail onTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    Class<?> required = ex.getRequiredType();
+    String type = required == null ? "the expected type" : required.getSimpleName();
+    return problem(
+        HttpStatus.BAD_REQUEST,
+        "Bad Request",
+        "bad_request",
+        "parameter '" + ex.getName() + "' must be a valid " + type);
   }
 
   /**

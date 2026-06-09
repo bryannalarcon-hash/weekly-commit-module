@@ -67,7 +67,7 @@ public class SecurityConfig {
                     // reconcile transitions.
                     .requestMatchers(HttpMethod.GET, "/api/rollup", "/api/rollup/**")
                     .hasAuthority(MANAGER_SCOPE)
-                    .requestMatchers(HttpMethod.GET, "/api/review-queue")
+                    .requestMatchers(HttpMethod.GET, "/api/review-queue", "/api/review-queue/**")
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/review")
                     .hasAuthority(MANAGER_SCOPE)

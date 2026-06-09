@@ -91,6 +91,34 @@ class HttpHygieneProblemJsonIT extends AbstractWebIT {
   }
 
   @Test
+  void reviewQueueTrailingSlashIsForbiddenForEmployee() throws Exception {
+    Member m = seed("empTrailing", MemberRole.EMPLOYEE);
+    // The trailing-slash variant of a manager route must be guarded identically to the exact path
+    // (matcher now covers "/api/review-queue/**"), so an employee gets 403 — not a 404 leaking
+    // through because the security matcher missed the slash variant.
+    mockMvc
+        .perform(
+            get("/api/review-queue/")
+                .with(TestJwtConfig.employee(m.getAuth0Subject(), m.getEmail())))
+        .andExpect(status().isForbidden())
+        .andExpect(header().string("Content-Type", PROBLEM_JSON.toString()))
+        .andExpect(jsonPath("$.code").value("forbidden"));
+  }
+
+  @Test
+  void errorDispatchRendersProblemJson() throws Exception {
+    Member m = seed("errProblem", MemberRole.EMPLOYEE);
+    // The container /error path (Boot's whitelabel by default) now renders RFC-7807 problem+json
+    // via
+    // ProblemErrorController, so EVERY error surface is consistent. A direct authenticated hit with
+    // no servlet error attributes defaults to 500 with a stable "code".
+    mockMvc
+        .perform(get("/error").with(TestJwtConfig.employee(m.getAuth0Subject(), m.getEmail())))
+        .andExpect(header().string("Content-Type", PROBLEM_JSON.toString()))
+        .andExpect(jsonPath("$.code").value("error"));
+  }
+
+  @Test
   void graphCallbackWithoutEncKeyIs503GraphNotConfigured() throws Exception {
     // No wcm.graph.token-enc-key configured under the test profile (AbstractWebIT sets none), so
     // the

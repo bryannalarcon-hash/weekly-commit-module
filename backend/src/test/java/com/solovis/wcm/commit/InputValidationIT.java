@@ -9,6 +9,7 @@
 package com.solovis.wcm.commit;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -179,5 +180,42 @@ class InputValidationIT extends AbstractWebIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.size").value(50))
         .andExpect(jsonPath("$.number").value(0));
+  }
+
+  // ---------------------------------------------------------------------------
+  // weekStart is a STRICT ISO date: a datetime/array/numeric encoding is 400
+  // malformed_request, not silently coerced (the wire contract matches OpenAPI format:date).
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void weekStartWithTimeComponentIsMalformedRequest() throws Exception {
+    Member owner = member("strictDate", MemberRole.EMPLOYEE, null);
+    // 2026-06-08 is a valid Monday, but the T-suffix datetime form must be rejected at parse time
+    // (@JsonFormat pattern yyyy-MM-dd) rather than coerced to a LocalDate.
+    mockMvc
+        .perform(
+            post("/api/commits")
+                .with(asEmployee(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"weekStart\":\"2026-06-08T00:00:00\",\"items\":[]}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("malformed_request"));
+  }
+
+  // ---------------------------------------------------------------------------
+  // A non-integer rollup param is 400 with a GENERIC detail that does not echo the raw input.
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void rollupNonIntegerPageIsBadRequestWithoutEchoingRawInput() throws Exception {
+    Member mgr = member("typeMismatchMgr", MemberRole.MANAGER, null);
+    mockMvc
+        .perform(get("/api/rollup").param("page", "abc").with(asManager(mgr)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("bad_request"))
+        .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("parameter 'page'")))
+        .andExpect(
+            jsonPath("$.detail")
+                .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("abc"))));
   }
 }
