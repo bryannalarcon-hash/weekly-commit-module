@@ -250,18 +250,54 @@ public class DemoSeeder implements CommandLineRunner {
       Member manager,
       MemberRole role,
       UUID teamId) {
+    String subject = resolveSubject(slug);
+    UUID seedId = deterministicId("member:" + slug);
+    // A request can race boot and JIT-provision this auth0Subject BEFORE the seeder runs (Tomcat
+    // accepts traffic before CommandLineRunners finish — e.g. a real login during startup, or a
+    // verification probe). That stub has a random id and no domain data; the seed identity (the
+    // deterministic id the seeded commits/reviews reference) must win, so adopt the subject by
+    // deleting the stub first. A stub that already owns data would FK-fail loudly — correct, since
+    // silently dropping user data would be worse.
+    members
+        .findByAuth0Subject(subject)
+        .filter(existing -> !seedId.equals(existing.getId()))
+        .ifPresent(
+            stub -> {
+              members.delete(stub);
+              members.flush();
+            });
     Member m =
         Member.builder()
-            .id(deterministicId("member:" + slug))
+            .id(seedId)
             .email(email)
             .displayName(name)
             .title(title)
             .managerId(manager == null ? null : manager.getId())
             .role(role)
-            .auth0Subject("auth0|seed-" + slug)
+            .auth0Subject(subject)
             .teamId(teamId)
             .build();
     return members.saveAndFlush(m);
+  }
+
+  /**
+   * The auth0Subject a seeded member matches on. Defaults to the hermetic "auth0|seed-&lt;slug&gt;"
+   * (used by the E2E X-Debug-Member path and the demo). For a LIVE Auth0 demo, three role-anchor
+   * members can be re-pointed at REAL Auth0 user subjects via env vars so a real browser login
+   * lands on the already-rich seeded member (its manager graph + commits + reconciliations):
+   * sofia=admin (top-level + admin:rcdo role), priya=manager (has reports), diego=employee (full
+   * commit history). Unset env (tests/e2e/normal boot) keeps the seed subject, so behavior is
+   * unchanged there.
+   */
+  private static String resolveSubject(String slug) {
+    String override =
+        switch (slug) {
+          case "sofia" -> System.getenv("DEMO_ADMIN_AUTH0_SUB");
+          case "priya" -> System.getenv("DEMO_MANAGER_AUTH0_SUB");
+          case "diego" -> System.getenv("DEMO_EMPLOYEE_AUTH0_SUB");
+          default -> null;
+        };
+    return (override != null && !override.isBlank()) ? override.trim() : "auth0|seed-" + slug;
   }
 
   // --- Sample weekly commits across lifecycle states -------------------------------------------
