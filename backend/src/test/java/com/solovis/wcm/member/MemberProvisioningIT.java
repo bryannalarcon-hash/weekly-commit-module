@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
-@Import(MemberProvisioningService.class)
+@Import({MemberProvisioningService.class, MemberProvisioningWriter.class})
 class MemberProvisioningIT extends AbstractPersistenceIT {
 
   @Autowired private MemberProvisioningService provisioning;

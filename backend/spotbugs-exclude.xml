@@ -68,6 +68,12 @@
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>
 
+  <!-- Provisioning service stores the injected MemberProvisioningWriter @Service (rationale #3). -->
+  <Match>
+    <Class name="com.solovis.wcm.member.MemberProvisioningService"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
   <!-- Application services + the demo seeder store constructor-injected Spring beans (repositories,
        the concrete RcdoRepository facade, other @Service deps) — the same DI idiom as rationale #3,
        not a real escape. RcdoAdminController is the admin edit-tree controller (rationale #3). -->
