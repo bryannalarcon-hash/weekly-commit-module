@@ -1,6 +1,7 @@
 // Member — a person who authors weekly commits; maps the member table.
 // Identity binds to auth0Subject (unique) for JIT provisioning; managerId self-FK forms the
 // manager graph used by roll-up/authz. Extends AbstractAuditingEntity. email is unique.
+// timezone is the member's preferred IANA zone (nullable), edited via the Settings > Account tab.
 package com.solovis.wcm.member;
 
 import com.solovis.wcm.common.AbstractAuditingEntity;
@@ -50,6 +51,9 @@ public class Member extends AbstractAuditingEntity {
   @Column(name = "team_id")
   private UUID teamId;
 
+  @Column(name = "timezone", length = 63)
+  private String timezone;
+
   @Builder
   private Member(
       UUID id,
@@ -59,7 +63,8 @@ public class Member extends AbstractAuditingEntity {
       UUID managerId,
       MemberRole role,
       String auth0Subject,
-      UUID teamId) {
+      UUID teamId,
+      String timezone) {
     this.id = id == null ? UUID.randomUUID() : id;
     this.email = email;
     this.displayName = displayName;
@@ -68,6 +73,7 @@ public class Member extends AbstractAuditingEntity {
     this.role = role;
     this.auth0Subject = auth0Subject;
     this.teamId = teamId;
+    this.timezone = timezone;
   }
 
   /** True when this member has no manager (a top-of-graph executive). */
