@@ -1,12 +1,14 @@
 // apps/wc-remote/src/screens/manager/ReviewDetail.tsx — the manager's per-report review screen (brief
 // §6.8, U21), re-skinned to the WCM design (prototype/wcm/page-mgr-queue.jsx "Review a Commit" +
 // screenshots/07-mgr-review-commit). Layout: a queue/back + Planned-vs-actual/Next-report nav row; a
-// report header panel (Avatar, name, week range, Locked badge, "Mark reviewed", and the member's Pulse
-// rating+comment); an amber notice when any item is unlinked from strategy; and per-item review cards
-// (chess glyph, title, done check, RCDO link / unlinked chip, Comment/Flag/Mark-reviewed actions with an
-// inline comment textarea). "Mark reviewed" opens a ConfirmDialog before posting. Renders the
-// REPORT-NOT-LOCKED empty state for a Draft commit. Data + the review mutation go through RTK Query
-// (useGetCommitQuery / useReviewCommitMutation); the member's Pulse is read via useGetPulseQuery.
+// report header panel (Avatar, name, week range, Locked badge, the CB-1 "Schedule 1:1" ghost button
+// that opens ScheduleDialog for this report + a "Scheduled ✓" note after success, "Mark reviewed", and
+// the member's Pulse rating+comment); an amber notice when any item is unlinked from strategy; and
+// per-item review cards (chess glyph, title, done check, RCDO link / unlinked chip,
+// Comment/Flag/Mark-reviewed actions with an inline comment textarea). "Mark reviewed" opens a
+// ConfirmDialog before posting. Renders the REPORT-NOT-LOCKED empty state for a Draft commit. Data +
+// the review mutation go through RTK Query (useGetCommitQuery / useReviewCommitMutation); the member's
+// Pulse is read via useGetPulseQuery.
 import { useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import type { CommitItemDto, ReviewState } from '@wcm/types';
@@ -23,6 +25,7 @@ import {
   Skeleton,
 } from '@wcm/ui';
 import { completedCount, formatProgress, formatWeekRange } from '../../lib/week';
+import { ScheduleDialog } from './ScheduleDialog';
 
 export interface ReviewDetailProps {
   commitId: string;
@@ -70,6 +73,9 @@ export function ReviewDetail({
   const [itemReviewed, setItemReviewed] = useState<ReadonlySet<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reviewed, setReviewed] = useState(false);
+  // CB-1 Schedule-1:1 affordance: dialog visibility + the scheduled-✓ note after a success.
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduled, setScheduled] = useState(false);
 
   if (isLoading) {
     return (
@@ -176,23 +182,48 @@ export function ReviewDetail({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={reviewState.isLoading || reviewed}
-            onClick={() => setConfirmOpen(true)}
-            data-testid="mark-reviewed"
-          >
-            {reviewed ? (
-              <>
-                <Icon.checkCircle size={15} aria-hidden /> Reviewed
-              </>
-            ) : (
-              <>
-                <Icon.check size={15} aria-hidden /> Mark reviewed
-              </>
+          <div className="flex flex-wrap items-center gap-2">
+            {scheduled && (
+              <span
+                data-testid="schedule-success"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: 'var(--signal)',
+                }}
+              >
+                <Icon.checkCircle size={14} aria-hidden /> Scheduled ✓
+              </span>
             )}
-          </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setScheduleOpen(true)}
+              data-testid="schedule-open"
+            >
+              <Icon.week size={15} aria-hidden /> Schedule 1:1
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={reviewState.isLoading || reviewed}
+              onClick={() => setConfirmOpen(true)}
+              data-testid="mark-reviewed"
+            >
+              {reviewed ? (
+                <>
+                  <Icon.checkCircle size={15} aria-hidden /> Reviewed
+                </>
+              ) : (
+                <>
+                  <Icon.check size={15} aria-hidden /> Mark reviewed
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {pulse && pulse.rating !== null && (
@@ -350,6 +381,18 @@ export function ReviewDetail({
           );
         })}
       </ul>
+
+      {scheduleOpen && (
+        <ScheduleDialog
+          reportMemberId={data.memberId}
+          reportName={name}
+          onClose={() => setScheduleOpen(false)}
+          onScheduled={() => {
+            setScheduled(true);
+            setScheduleOpen(false);
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

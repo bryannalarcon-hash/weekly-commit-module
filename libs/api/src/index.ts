@@ -9,6 +9,7 @@ export {
   resetMockDb,
   MOCK_MEMBER_ID,
   __setMockOutlookConnected,
+  outlookScheduleIllegalStateHandler,
 } from './msw/handlers';
 
 export * from './commitApi';

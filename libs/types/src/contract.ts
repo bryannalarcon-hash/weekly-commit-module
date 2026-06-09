@@ -239,6 +239,27 @@ export interface OutlookConnectResponse {
   authorizationUrl: string;
 }
 
+/**
+ * Body of POST /api/integration/outlook/schedule (CB-1 — manager schedules a 1:1/check-in with a
+ * report through their delegated Graph link). 409 illegal_state when the acting manager's Outlook
+ * is not CONNECTED; row-level authz restricts reportMemberId to the manager's own reports.
+ */
+export interface ScheduleOutlookEventRequest {
+  /** The report (direct report of the acting manager) the event is with. */
+  reportMemberId: string;
+  subject: string;
+  /** ISO-8601 date-time WITH a UTC offset (e.g. 2026-06-10T10:00:00-05:00) — an absolute instant. */
+  startDateTime: string;
+  durationMinutes: number;
+  /** Optional body/agenda note placed on the event. */
+  note?: string | null;
+}
+
+/** POST /api/integration/outlook/schedule response — the created Graph calendar event's id. */
+export interface ScheduleOutlookEventResponse {
+  eventId: string;
+}
+
 // --- Settings DTOs (mirror settings/dto/*) ----------------------------------------------------
 
 /** GET /api/settings/account response (mirrors MemberAccountDto): the acting member's profile. */

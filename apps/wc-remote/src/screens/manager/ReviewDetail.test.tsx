@@ -2,8 +2,9 @@
 // detail (brief §6.8, U21). MSW-backed, real RTK Query. Covers: the report-not-locked state (Draft →
 // nothing to review), a locked report's header (name + Locked badge + Pulse) and item cards, the
 // mark-reviewed flow (ConfirmDialog → posts a review), the unlinked-strategy amber notice, the inline
-// per-item comment box (Comment toggle), prev/next navigation callbacks (disabled when no handler), and
-// an error state.
+// per-item comment box (Comment toggle), prev/next navigation callbacks (disabled when no handler),
+// the CB-1 Schedule-1:1 header button (opens the prefilled ScheduleDialog; success note after posting),
+// and an error state.
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -158,6 +159,26 @@ describe('ReviewDetail', () => {
     expect(next).toBeEnabled();
     await user.click(next);
     expect(onNext).toHaveBeenCalledOnce();
+  });
+
+  it('opens the Schedule 1:1 dialog from the header and shows the success note after scheduling', async () => {
+    server.use(http.get('*/commits/c1', () => HttpResponse.json(commit('LOCKED'))));
+    const user = userEvent.setup();
+    render(withStore(<ReviewDetail commitId="c1" memberName="Maya Chen" onBack={noop} />));
+    await screen.findByTestId('review-header');
+
+    // Closed until the header button is clicked; the dialog opens prefilled for THIS report.
+    expect(screen.queryByTestId('schedule-dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('schedule-open'));
+    const dialog = await screen.findByTestId('schedule-dialog');
+    expect(within(dialog).getByTestId('schedule-subject')).toHaveValue('1:1 — Maya Chen');
+
+    // Default MSW handler succeeds → dialog closes and the inline success note appears.
+    await user.click(within(dialog).getByTestId('schedule-submit'));
+    await waitFor(() => expect(screen.queryByTestId('schedule-dialog')).not.toBeInTheDocument());
+    expect(screen.getByTestId('schedule-success')).toHaveTextContent(/scheduled/i);
+    // Existing header affordances are intact alongside the new button.
+    expect(screen.getByTestId('mark-reviewed')).toBeInTheDocument();
   });
 
   it('shows an error state on failure', async () => {

@@ -2,9 +2,10 @@
 // (RTK Query units U17+) can build and test against mocks BEFORE the Spring controllers exist. The
 // endpoints, methods, status codes and JSON shapes mirror the Java controllers 1:1 (see
 // backend/.../{commit,rcdo,review,settings}). A tiny in-memory store backs a create->read->submit
-// round-trip, the RCDO admin CRUD (mutates the in-memory tree the browse/picker read), and Settings
-// (account + the 5 notification toggles); errors are emitted as RFC-7807 ProblemDetail to match
-// ApiExceptionHandler.
+// round-trip, the RCDO admin CRUD (mutates the in-memory tree the browse/picker read), Settings
+// (account + the 5 notification toggles), and the CB-1 Outlook schedule-1:1 POST (success default;
+// outlookScheduleIllegalStateHandler is the switchable 409 not-connected variant); errors are emitted
+// as RFC-7807 ProblemDetail to match ApiExceptionHandler.
 import { http, HttpResponse } from 'msw';
 import type {
   CommitDto,
@@ -32,6 +33,8 @@ import type {
   ReviewQueueRow,
   ReviewRequest,
   RollupRow,
+  ScheduleOutlookEventRequest,
+  ScheduleOutlookEventResponse,
   SupportingOutcomeDto,
   SupportingOutcomeRequest,
   SupportingOutcomeResponse,
@@ -628,6 +631,16 @@ export const handlers = [
     return HttpResponse.json(outlook);
   }),
 
+  // CB-1: schedule a 1:1 Outlook event with a report. The default mock always succeeds with a fresh
+  // event id (the real impl 409s when the manager's Outlook link is missing — tests exercise that
+  // path by switching in outlookScheduleIllegalStateHandler below via server.use).
+  http.post(`${BASE}/integration/outlook/schedule`, async ({ request }) => {
+    // Consume the body so spies layered over this handler see the same parsed shape.
+    (await request.json()) as ScheduleOutlookEventRequest;
+    const body: ScheduleOutlookEventResponse = { eventId: `evt-${uuid()}` };
+    return HttpResponse.json(body, { status: 201 });
+  }),
+
   // --- Settings (Account + Notifications) ------------------------------------------------------
   http.get(`${BASE}/settings/account`, () => HttpResponse.json(account)),
 
@@ -663,3 +676,13 @@ export function __setMockOutlookConnected(account = 'ada@solovis.com'): void {
     createEventOnLock: outlook.createEventOnLock,
   };
 }
+
+/**
+ * Test variant for CB-1: POST /integration/outlook/schedule fails 409 illegal_state — the acting
+ * manager has no connected Outlook link. Switch in via server.use(outlookScheduleIllegalStateHandler)
+ * to drive the dialog's "Connect Outlook in Settings → Integrations first" inline error.
+ */
+export const outlookScheduleIllegalStateHandler = http.post(
+  `${BASE}/integration/outlook/schedule`,
+  () => problem(409, 'illegal_state', 'Outlook is not connected for the acting member'),
+);

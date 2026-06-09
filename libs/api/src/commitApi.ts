@@ -2,7 +2,8 @@
 // to the backend (no fetch/axios). Covers every endpoint in libs/types/contract.ts — commits, RCDO
 // (browse + admin CRUD on rally-cries/objectives/outcomes/supporting-outcomes), reconciliation, review
 // + roll-up, the My-Week/History week list, weekly Pulse, the manager review queue, the Outlook (Graph)
-// connection, and Settings (account profile + the 5 notification toggles) — injects a Bearer token via
+// connection + the CB-1 schedule-1:1 event mutation, and Settings (account profile + the 5 notification
+// toggles) — injects a Bearer token via
 // the injectable tokenProvider, and wires the providesTags/invalidatesTags graph (RCDO mutations bust
 // the tree tag; Settings reads/writes share per-resource tags). Generated React hooks feed the screens.
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
@@ -30,6 +31,8 @@ import type {
   ReviewQueueRow,
   ReviewRequest,
   RollupRow,
+  ScheduleOutlookEventRequest,
+  ScheduleOutlookEventResponse,
   SupportingOutcomeDto,
   SupportingOutcomeRequest,
   SupportingOutcomeResponse,
@@ -391,6 +394,18 @@ export const commitApi = createApi({
       invalidatesTags: [outlookTag()],
     }),
 
+    /**
+     * CB-1: schedule a 1:1/check-in Outlook event with a report via the acting manager's delegated
+     * Graph link. Fails 409 illegal_state when the manager's Outlook is not connected. No cache
+     * invalidation — the created event lives in Outlook, not in any WCM read model.
+     */
+    scheduleOutlookEvent: build.mutation<
+      ScheduleOutlookEventResponse,
+      ScheduleOutlookEventRequest
+    >({
+      query: (body) => ({ url: '/integration/outlook/schedule', method: 'POST', body }),
+    }),
+
     updateOutlookSettings: build.mutation<OutlookConnectionDto, OutlookSettingsRequest>({
       query: (body) => ({
         url: '/integration/outlook/settings',
@@ -467,6 +482,7 @@ export const {
   useGetOutlookConnectionQuery,
   useConnectOutlookMutation,
   useDisconnectOutlookMutation,
+  useScheduleOutlookEventMutation,
   useUpdateOutlookSettingsMutation,
   useGetAccountQuery,
   useUpdateAccountMutation,
