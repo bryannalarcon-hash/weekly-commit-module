@@ -1,0 +1,20 @@
+{
+  "name": "wc-remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@wcm/api": "*",
+    "@wcm/types": "*",
+    "@wcm/ui": "*",
+    "flowbite-react": "^0.10.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

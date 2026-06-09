@@ -1,0 +1,51 @@
+// apps/wc-remote/vite.config.ts — Vite 5 config for the Weekly Commit MF remote.
+// Wires @vitejs/plugin-react + @module-federation/vite (exposes ./WeeklyCommitApp,
+// react/react-dom as shared singletons) and a jsdom Vitest project for the render test.
+// CSS pipeline is pinned to the repo-root postcss.config.js so Tailwind content scanning
+// resolves correctly even when the build runs from this app subdirectory.
+/// <reference types="vitest" />
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { federation } from '@module-federation/vite';
+
+const rootPostcss = fileURLToPath(
+  new URL('../../postcss.config.js', import.meta.url),
+);
+
+export default defineConfig({
+  css: {
+    postcss: rootPostcss,
+  },
+  plugins: [
+    react(),
+    federation({
+      name: 'wc',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './WeeklyCommitApp': './src/WeeklyCommitApp.tsx',
+      },
+      shared: {
+        react: { singleton: true, requiredVersion: '^18.3.1' },
+        'react-dom': { singleton: true, requiredVersion: '^18.3.1' },
+      },
+    }),
+  ],
+  build: {
+    // Module Federation in Vite 5 requires a modern target.
+    target: 'esnext',
+    minify: false,
+  },
+  server: {
+    port: 4201,
+  },
+  preview: {
+    port: 4201,
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['../../vitest.setup.ts'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+  },
+});

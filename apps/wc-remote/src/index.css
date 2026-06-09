@@ -1,0 +1,5 @@
+/* apps/wc-remote/src/index.css — Tailwind entrypoint for the standalone remote shell.
+   Pulls in Tailwind's base/components/utilities; Flowbite classes are emitted via tailwind.config.js. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

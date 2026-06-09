@@ -1,0 +1,22 @@
+# docker-compose.yml — local Postgres for the Weekly Commit Module backend.
+# Mirrors the application.yml defaults (db/user/pass = wcm) so the app runs against it out of the box.
+services:
+  postgres:
+    image: postgres:16.4
+    container_name: wcm-postgres
+    environment:
+      POSTGRES_DB: wcm
+      POSTGRES_USER: wcm
+      POSTGRES_PASSWORD: wcm
+    ports:
+      - "5432:5432"
+    volumes:
+      - wcm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wcm -d wcm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  wcm-pgdata:

@@ -15,6 +15,32 @@ Screenshot*.png
 # Assignment brief — kept local, not published to the repo
 assignment_description.md
 
+# Internal research dossier (wcm-research workflow output) — local notes, not for the repo
+docs/research/
+
+# Design brief for Claude Design — local handoff artifact, not for the repo
+design/
+
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Java / Maven build output
+backend/target/
+target/
+
+# Node / Nx / build output
+node_modules/
+.nx/
+dist/
+**/dist/
+*.tsbuildinfo
+
+# Internal planning docs — kept local (like research/design); deliverable docs go in README/docs/TECHNICAL.md
+docs/plans/
+docs/planning/
+
+# Secrets — never commit real env files (Auth0/Azure/AWS); keep .env.example only
+.env
+.env.*
+!.env.example

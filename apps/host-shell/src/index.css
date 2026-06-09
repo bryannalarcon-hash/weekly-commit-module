@@ -1,0 +1,5 @@
+/* apps/host-shell/src/index.css — Tailwind entrypoint for the dev host shell.
+   Pulls in Tailwind layers; the remote brings its own styles when federated. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

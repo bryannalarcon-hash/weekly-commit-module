@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.nx
+backend
+docker-compose.yml
+**/.__mf__temp/**
+*.md

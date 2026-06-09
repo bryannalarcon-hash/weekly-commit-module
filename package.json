@@ -1,0 +1,55 @@
+{
+  "name": "weekly-commit-module",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Weekly Commit Module — Nx + Yarn Workspaces monorepo: a Vite 5 Module Federation remote (React 18) replicating the 15Five weekly-commit slice.",
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build": "nx run-many -t build",
+    "build:remote": "nx run wc-remote:build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.base.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "@module-federation/vite": "1.7.0",
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.1",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^9.9.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.9.0",
+    "jsdom": "^25.0.0",
+    "nx": "^19.6.0",
+    "prettier": "3.3.3",
+    "tailwindcss": "^3.4.10",
+    "postcss": "^8.4.41",
+    "autoprefixer": "^10.4.20",
+    "flowbite": "^2.5.1",
+    "flowbite-react": "^0.10.2",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.2.0",
+    "vite": "^5.4.2",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
