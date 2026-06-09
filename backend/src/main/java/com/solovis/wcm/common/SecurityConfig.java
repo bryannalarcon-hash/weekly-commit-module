@@ -3,7 +3,8 @@
 // Graph consent callback (which carries no bearer token and is guarded by a signed `state`
 // instead),
 // gates manager-only routes (rollup, review, reconcile transitions) behind SCOPE_reconcile:commits,
-// and requires a valid JWT everywhere else; bearer auth failures render as 401/403. Auth0
+// and requires a valid JWT everywhere else; bearer auth failures render as 401/403 with an RFC-7807
+// problem+json body (ProblemAuthHandlers), matching the service-layer error shape. Auth0
 // "permissions" are mapped
 // to SCOPE_ authorities. The PROD RS256 JwtDecoder (issuer-uri + audience validation) is built ONLY
 // when AUTH0_ISSUER_URI is set, so the test profile (TestJwtConfig's local-keypair decoder) and a
@@ -77,9 +78,21 @@ public class SecurityConfig {
                     // Everything else needs a valid token (row-level authz then runs in services).
                     .anyRequest()
                     .authenticated())
+        // Filter-chain denials carry an RFC-7807 problem+json body (code unauthorized/forbidden),
+        // matching the service-layer ApiExceptionHandler shape instead of an empty 401/403 body.
+        .exceptionHandling(
+            ex ->
+                ex.authenticationEntryPoint(ProblemAuthHandlers.unauthorizedEntryPoint())
+                    .accessDeniedHandler(ProblemAuthHandlers.forbiddenHandler()))
         .oauth2ResourceServer(
             oauth2 ->
-                oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                oauth2
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                    // The resource-server filter installs its OWN bearer
+                    // entry-point/denied-handler;
+                    // override them so bearer-token 401/403 also render problem+json (not empty).
+                    .authenticationEntryPoint(ProblemAuthHandlers.unauthorizedEntryPoint())
+                    .accessDeniedHandler(ProblemAuthHandlers.forbiddenHandler()));
     return http.build();
   }
 

@@ -8,9 +8,10 @@
 // and derive the member FROM the validated state — defeating CSRF / authorization-code injection.
 // The HMAC key is the same 256-bit secret used for token encryption (wcm.graph.token-enc-key,
 // base64),
-// so the flow shares one configured secret; a missing key leaves this UNCONFIGURED and signing
-// fails
-// fast. Stateless by design (no server-side nonce store): the signature + expiry are the guard.
+// so the flow shares one configured secret; a missing key leaves this UNCONFIGURED, so issue/verify
+// fail fast with GraphNotConfiguredException (mapped to 503 graph_not_configured) rather than a
+// bare/misleading 403. Stateless by design (no server-side nonce store): the signature + expiry
+// are the guard.
 package com.solovis.wcm.integration;
 
 import java.nio.charset.StandardCharsets;
@@ -117,7 +118,7 @@ public class GraphConsentState {
 
   private void requireKey() {
     if (key == null) {
-      throw new IllegalStateException(
+      throw new GraphNotConfiguredException(
           "wcm.graph.token-enc-key is not configured; cannot sign/verify consent state");
     }
   }

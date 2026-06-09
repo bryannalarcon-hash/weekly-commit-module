@@ -4,6 +4,9 @@
 # AWS SNS/SQS eventing seam (U26). Every external secret is an env ref defaulting to EMPTY so the app
 # still starts with NOTHING configured (tests / bare local boot); a non-blank value activates that
 # integration (Auth0 prod decoder, Graph adapter under the "graph" profile, SNS/SQS under "aws").
+# Also sets HTTP-hygiene flags so error responses stay correct RFC-7807 problem+json: MVC raises
+# NoHandlerFoundException for unknown routes (-> 404), static resource mappings are off, and Jackson
+# rejects a float where an Integer is expected (-> 400) instead of truncating it.
 wcm:
   auth0:
     issuer-uri: ${AUTH0_ISSUER_URI:}
@@ -34,6 +37,23 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/wcm}
     username: ${POSTGRES_USER:wcm}
     password: ${POSTGRES_PASSWORD:wcm}
+  mvc:
+    # Raise NoHandlerFoundException for unmapped routes instead of forwarding to /error (which, on
+    # the stateless security chain, surfaced as a misleading bare 403). ApiExceptionHandler maps it
+    # to a clean 404 problem+json. Pairs with web.resources.add-mappings=false so a static-resource
+    # handler does not absorb the unknown path first.
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      # Disable the default static-resource mappings: with no static assets to serve, this lets
+      # unmapped API routes raise NoHandlerFoundException (-> 404) rather than being swallowed by the
+      # resource handler. Springdoc's /v3/api-docs is a controller endpoint, unaffected by this.
+      add-mappings: false
+  jackson:
+    deserialization:
+      # Reject a non-integer (e.g. 5.9) where an Integer is expected instead of silently truncating
+      # it (finding #16) — Jackson then raises HttpMessageNotReadableException -> 400 malformed_request.
+      accept-float-as-int: false
   jpa:
     open-in-view: false
     hibernate:

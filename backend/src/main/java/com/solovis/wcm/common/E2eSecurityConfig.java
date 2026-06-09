@@ -8,7 +8,8 @@
 // SAME manager-only route guards (rollup / review / reconcile transitions) apply as in prod. This
 // is
 // a test-only path — it NEVER ships in prod and is NOT a product fallback. Anonymous (no/unknown
-// header) requests stay unauthenticated → 401/403 exactly as the JWT chain would render them.
+// header) requests stay unauthenticated → 401/403 exactly as the JWT chain would render them,
+// including the same RFC-7807 problem+json bodies (ProblemAuthHandlers) on those denials.
 package com.solovis.wcm.common;
 
 import com.solovis.wcm.member.Member;
@@ -76,6 +77,14 @@ public class E2eSecurityConfig {
                     .hasAuthority(MANAGER_SCOPE)
                     .anyRequest()
                     .authenticated())
+        // Same RFC-7807 problem+json bodies on filter-chain denials as the prod chain: an anonymous
+        // request -> 401 (code unauthorized), an authenticated non-manager on a manager route ->
+        // 403
+        // (code forbidden), each with a body rather than the empty default.
+        .exceptionHandling(
+            ex ->
+                ex.authenticationEntryPoint(ProblemAuthHandlers.unauthorizedEntryPoint())
+                    .accessDeniedHandler(ProblemAuthHandlers.forbiddenHandler()))
         .addFilterBefore(
             new DebugMemberFilter(members), UsernamePasswordAuthenticationFilter.class);
     return http.build();
