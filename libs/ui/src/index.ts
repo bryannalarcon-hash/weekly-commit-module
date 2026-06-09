@@ -54,9 +54,6 @@ export * from './CarriedForwardCard'; // CarriedForwardCard
 export * from './RcdoPickerDrawer'; // RcdoPickerDrawer, RcdoSelection
 
 // ── Shell ──
-// WcShell is the re-skin's INTERNAL sub-nav + content region (design shell.jsx) — it SUPERSEDES
-// WcNavigation. WcNavigation is kept exported below for any caller still importing it directly, but new
-// code should use WcShell; the app integration (wiring the c-design frontend) migrates the remaining
-// WcNavigation consumers over to WcShell.
+// WcShell is the re-skin's INTERNAL sub-nav + content region (design shell.jsx). It replaced the
+// former WcNavigation (now removed) — the app mounts WcShell as the remote's only chrome.
 export * from './WcShell'; // WcShell, WcNavId, WcManagerSubId
-export * from './WcNavigation'; // WcNavigation (DEPRECATED — superseded by WcShell)

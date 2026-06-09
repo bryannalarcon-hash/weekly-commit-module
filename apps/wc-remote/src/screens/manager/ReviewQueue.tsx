@@ -1,114 +1,370 @@
-// apps/wc-remote/src/screens/manager/ReviewQueue.tsx — the manager Review Queue (brief §6.7, U21).
-// Lists the manager's direct reports for a selected week (WeekSelector → review-queue query) with each
-// report's submission status (Locked / Draft / overdue), an at-a-glance completion count, and a
-// "needs review only" quick-filter. Rows for a locked report open the review detail. Loading/empty/
-// error use the shared primitives; the manager filter is server-side — these are scan affordances.
+// apps/wc-remote/src/screens/manager/ReviewQueue.tsx — the manager Review Queue (brief §6.7, U21),
+// re-skinned to the WCM design handoff (prototype/wcm/page-mgr-queue.jsx + screenshots/desktop/
+// 06-mgr-review-queue.png). Lists the manager's direct reports for a selected week (WeekSelector +
+// week-stepper → review-queue query) as a single panel of rows — Avatar, name, last-reviewed line,
+// done/total count, alignment slot, and a submission badge (Submitted / Draft / Overdue / Reviewed).
+// A filter-chip bar (All / Needs review / Submitted / Draft / Overdue) with live counts narrows the
+// view client-side; Submitted/Reviewed rows open the review detail (onOpenReview). Loading shimmer,
+// the "All caught up" empty state, and the retryable error use the shared @wcm/ui primitives. Data is
+// RTK Query ONLY (useGetReviewQueueQuery, unchanged). Preserves the manager-queue testids the Cypress
+// suite depends on (review-queue, queue-list, queue-row, queue-open-review, queue-overdue,
+// needs-review-filter, week-selector) and adds the design's chip/stepper/badge testids.
 import { useMemo, useState } from 'react';
-import { Button, Checkbox, Label } from 'flowbite-react';
 import type { ReviewQueueRow } from '@wcm/types';
 import { useGetReviewQueueQuery } from '@wcm/api';
-import { EmptyState, ErrorState, LifecycleBadge, Skeleton } from '@wcm/ui';
-import { WeekSelector, recentWeeks } from '../../components/WeekSelector';
-import { formatProgress } from '../../lib/week';
+import { Avatar, EmptyState, ErrorState, Icon, Skeleton } from '@wcm/ui';
+import { recentWeeks } from '../../components/WeekSelector';
+import { formatWeekRange } from '../../lib/week';
 
 export interface ReviewQueueProps {
   /** Open a report's weekly commit for review (only when the report has a commit). */
   onOpenReview: (commitId: string, weekStart: string) => void;
 }
 
+/** The design's submission-status vocabulary for a queue row (distinct from the lifecycle badge). */
+type SubmissionStatus = 'submitted' | 'draft' | 'overdue' | 'reviewed';
+
+/** Filter chip ids — `all` plus one per submission status (mirrors the design chip bar). */
+type FilterId = 'all' | 'needs' | SubmissionStatus;
+
+/**
+ * Collapse a row's lifecycle/review/overdue truth into the design's single submission status.
+ * Reviewed wins (terminal), then a still-unsubmitted overdue report, then a locked submission,
+ * else it is a draft (covers DRAFT and the not-started/null lifecycle the API can return).
+ */
+function submissionOf(r: ReviewQueueRow): SubmissionStatus {
+  if (r.reviewState === 'REVIEWED') return 'reviewed';
+  if (r.overdue && r.lifecycleState !== 'LOCKED') return 'overdue';
+  if (r.lifecycleState === 'LOCKED') return 'submitted';
+  return 'draft';
+}
+
+/** A row is reviewable when the report has actually locked a commit for the week (Submitted/Reviewed). */
+function canReviewRow(r: ReviewQueueRow): boolean {
+  return Boolean(r.commitId) && r.lifecycleState === 'LOCKED';
+}
+
+/** A row "needs review" when it is a locked submission still awaiting the manager's verdict. */
+function needsReview(r: ReviewQueueRow): boolean {
+  return r.lifecycleState === 'LOCKED' && r.reviewState !== 'REVIEWED';
+}
+
+const SUB_VISUAL: Record<SubmissionStatus, { label: string; color: string; dim: string; icon: string }> = {
+  submitted: { label: 'Submitted', color: 'var(--cyan)', dim: 'var(--cyan-dim)', icon: 'lock' },
+  draft: { label: 'Draft', color: 'var(--slate)', dim: 'var(--slate-dim)', icon: 'pencil' },
+  overdue: { label: 'Overdue', color: 'var(--red)', dim: 'var(--red-dim)', icon: 'alert' },
+  reviewed: { label: 'Reviewed', color: 'var(--signal)', dim: 'var(--signal-dim)', icon: 'checkCircle' },
+};
+
+/** The design's submission pill: token-tinted, icon + label (state never conveyed by color alone). */
+function SubmissionBadge({ status }: { status: SubmissionStatus }): JSX.Element {
+  const v = SUB_VISUAL[status];
+  const Glyph = (Icon as Record<string, (p: { size?: number }) => JSX.Element>)[v.icon];
+  return (
+    <span
+      data-testid="queue-status-badge"
+      data-status={status}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        fontSize: 11.5,
+        fontWeight: 600,
+        color: v.color,
+        background: v.dim,
+        padding: '3px 9px',
+        borderRadius: 'var(--r-pill)',
+        border: `1px solid color-mix(in oklch, ${v.color} 28%, transparent)`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {Glyph?.({ size: 12 })} {v.label}
+    </span>
+  );
+}
+
 export function ReviewQueue({ onOpenReview }: ReviewQueueProps): JSX.Element {
   const weeks = recentWeeks();
-  const [weekStart, setWeekStart] = useState<string>(weeks[0] ?? '');
-  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
+  const [weekIndex, setWeekIndex] = useState(0);
+  const weekStart = weeks[weekIndex] ?? weeks[0] ?? '';
+  const [filter, setFilter] = useState<FilterId>('all');
   const { data, isLoading, isError, refetch } = useGetReviewQueueQuery({ weekStart });
 
+  const all = useMemo<ReviewQueueRow[]>(() => data?.content ?? [], [data]);
+
+  // Live chip counts over the unfiltered set.
+  const counts = useMemo(() => {
+    const c: Record<FilterId, number> = { all: all.length, needs: 0, submitted: 0, draft: 0, overdue: 0, reviewed: 0 };
+    for (const r of all) {
+      if (needsReview(r)) c.needs += 1;
+      c[submissionOf(r)] += 1;
+    }
+    return c;
+  }, [all]);
+
   const rows = useMemo<ReviewQueueRow[]>(() => {
-    const all = data?.content ?? [];
-    return needsReviewOnly
-      ? all.filter((r) => r.lifecycleState === 'LOCKED' && r.reviewState !== 'REVIEWED')
-      : all;
-  }, [data, needsReviewOnly]);
+    if (filter === 'all') return all;
+    if (filter === 'needs') return all.filter(needsReview);
+    return all.filter((r) => submissionOf(r) === filter);
+  }, [all, filter]);
+
+  const FILTERS: { id: FilterId; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'needs', label: 'Needs review' },
+    { id: 'submitted', label: 'Submitted' },
+    { id: 'draft', label: 'Draft' },
+    { id: 'overdue', label: 'Overdue' },
+  ];
+
+  // The "needs review" chip is the re-skin of the legacy needs-review checkbox; keep its testid.
+  const filterTestId = (id: FilterId): string => (id === 'needs' ? 'needs-review-filter' : `queue-filter-${id}`);
+
+  const canStepNewer = weekIndex > 0;
+  const canStepOlder = weekIndex < weeks.length - 1;
 
   return (
-    <section className="mx-auto max-w-4xl space-y-4 p-6" data-testid="review-queue">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <section className="page mx-auto max-w-4xl" data-testid="review-queue">
+      <header
+        className="ptitle"
+        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+      >
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-primary-900">Review queue</h1>
-          <p className="text-sm text-slate-500">
-            See who has submitted this week and open their commits to review.
-          </p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)' }}>Review Queue</h1>
+          <div className="sub" style={{ fontSize: 13, color: 'var(--ink-low)', marginTop: 2 }}>
+            Direct reports · {formatWeekRange(weekStart).replace('Week of ', '')}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <WeekSelector value={weekStart} weeks={weeks} onChange={setWeekStart} />
-          <Label className="flex items-center gap-2 text-sm text-slate-600">
-            <Checkbox
-              checked={needsReviewOnly}
-              onChange={(e) => setNeedsReviewOnly(e.target.checked)}
-              data-testid="needs-review-filter"
-            />
-            Needs review
-          </Label>
+        {/* Week stepper — newer/older around the human-readable range; drives the query week. */}
+        <div style={{ display: 'flex', gap: 9, alignItems: 'center' }} data-testid="week-stepper">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-label="Newer week"
+            disabled={!canStepNewer}
+            data-testid="week-newer"
+            onClick={() => setWeekIndex((i) => Math.max(0, i - 1))}
+          >
+            <Icon.chevL size={14} />
+          </button>
+          {/* Hidden native select preserves the week-selector testid + keyboard/AT access. */}
+          <label className="sr-only" htmlFor="week-selector">
+            Select a week
+          </label>
+          <select
+            id="week-selector"
+            data-testid="week-selector"
+            aria-label="Select a week"
+            value={weekStart}
+            onChange={(e) => setWeekIndex(Math.max(0, weeks.indexOf(e.target.value)))}
+            className="tnum"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: 'var(--mono)',
+              color: 'var(--ink)',
+              background: 'transparent',
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--r-sm)',
+              padding: '5px 8px',
+            }}
+          >
+            {weeks.map((w) => (
+              <option key={w} value={w}>
+                {formatWeekRange(w).replace('Week of ', '')}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-label="Older week"
+            disabled={!canStepOlder}
+            data-testid="week-older"
+            onClick={() => setWeekIndex((i) => Math.min(weeks.length - 1, i + 1))}
+          >
+            <Icon.chevR size={14} />
+          </button>
         </div>
       </header>
 
-      {isLoading && <Skeleton lines={6} />}
+      {/* Filter chips with live counts. */}
+      <div
+        style={{ display: 'flex', gap: 7, marginBottom: 16, flexWrap: 'wrap' }}
+        role="tablist"
+        aria-label="Filter reports"
+        data-testid="queue-filters"
+      >
+        {FILTERS.map((f) => {
+          const active = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-testid={filterTestId(f.id)}
+              onClick={() => setFilter(f.id)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                fontSize: 12.5,
+                fontWeight: 600,
+                padding: '7px 12px',
+                borderRadius: 'var(--r-pill)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                border: `1px solid ${active ? 'var(--line-bright)' : 'var(--line)'}`,
+                background: active ? 'var(--surface-1)' : 'transparent',
+                color: active ? 'var(--ink)' : 'var(--ink-low)',
+                boxShadow: active ? 'var(--shadow-1)' : 'none',
+              }}
+            >
+              {f.label}{' '}
+              <span
+                className="mono tnum"
+                data-testid={`queue-count-${f.id}`}
+                style={{
+                  fontSize: 10,
+                  color: active ? 'var(--signal)' : 'var(--ink-faint)',
+                  background: 'var(--surface-2)',
+                  padding: '1px 6px',
+                  borderRadius: 99,
+                }}
+              >
+                {counts[f.id]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoading && (
+        <div className="stack" style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="queue-loading">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="panel"
+              style={{ padding: 16, display: 'flex', gap: 12, alignItems: 'center' }}
+            >
+              <div className="sk" style={{ width: 38, height: 38, borderRadius: 'var(--r-sm)' }} />
+              <div style={{ flex: 1 }}>
+                <Skeleton lines={2} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {isError && <ErrorState title="Could not load the review queue" onRetry={() => void refetch()} />}
+
       {!isLoading && !isError && rows.length === 0 && (
         <EmptyState
-          title={needsReviewOnly ? 'All caught up' : 'No reports'}
-          description={
-            needsReviewOnly
-              ? 'Every submitted commit for this week has been reviewed.'
-              : 'You have no direct reports with activity this week.'
-          }
+          icon="checkCircle"
+          title="All caught up"
+          description="No reports match this filter. Everyone in this view is handled."
         />
       )}
 
       {!isLoading && !isError && rows.length > 0 && (
-        <ul className="space-y-2" data-testid="queue-list">
-          {rows.map((r) => {
-            const canReview = Boolean(r.commitId) && r.lifecycleState === 'LOCKED';
+        <div className="panel" style={{ overflow: 'hidden', padding: 0 }} data-testid="queue-list">
+          {rows.map((r, idx) => {
+            const status = submissionOf(r);
+            const canReview = canReviewRow(r);
+            const open = (): void => {
+              if (canReview && r.commitId) onOpenReview(r.commitId, weekStart);
+            };
             return (
-              <li
+              <div
                 key={r.memberId}
                 data-testid="queue-row"
                 data-member-id={r.memberId}
-                className="flex items-center justify-between gap-3 rounded border border-slate-200 bg-white px-4 py-3"
+                data-status={status}
+                role={canReview ? 'button' : undefined}
+                tabIndex={canReview ? 0 : undefined}
+                aria-disabled={canReview ? undefined : true}
+                onClick={open}
+                onKeyDown={(e) => {
+                  if (canReview && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    open();
+                  }
+                }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto',
+                  gap: 14,
+                  alignItems: 'center',
+                  padding: '14px 16px',
+                  borderTop: idx ? '1px solid var(--line-soft)' : 'none',
+                  cursor: canReview ? 'pointer' : 'default',
+                  transition: 'background .12s',
+                }}
+                onMouseEnter={(e) => {
+                  if (canReview) e.currentTarget.style.background = 'var(--surface-2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
               >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-primary-900">{r.memberName}</p>
-                  <p className="text-xs text-slate-500">
-                    {formatProgress(r.completedCount, r.itemCount)}
-                    {r.overdue && (
-                      <span className="ml-1 font-medium text-danger" data-testid="queue-overdue">
-                        · Overdue
-                      </span>
-                    )}
-                    {r.reviewState === 'REVIEWED' && (
-                      <span className="ml-1 text-green-700">· Reviewed</span>
-                    )}
-                  </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <Avatar name={r.memberName} size={38} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{r.memberName}</div>
+                    <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2 }}>
+                      Last reviewed —
+                      {r.overdue && (
+                        <span data-testid="queue-overdue" style={{ marginLeft: 6, color: 'var(--red)', fontWeight: 600 }}>
+                          · Overdue
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {r.lifecycleState ? (
-                    <LifecycleBadge state={r.lifecycleState} />
-                  ) : (
-                    <span className="text-xs text-slate-400">Not started</span>
-                  )}
-                  <Button
-                    size="xs"
-                    color="blue"
-                    disabled={!canReview}
-                    data-testid="queue-open-review"
-                    onClick={() => r.commitId && onOpenReview(r.commitId, weekStart)}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                  <span
+                    className="hide-xs tnum mono"
+                    data-testid="queue-progress"
+                    style={{ fontSize: 12, color: 'var(--ink-mid)', width: 96, textAlign: 'right' }}
                   >
-                    Review
-                  </Button>
+                    {r.itemCount ? `${r.completedCount}/${r.itemCount} done` : '—'}
+                  </span>
+                  <span
+                    className="hide-xs tnum mono"
+                    data-testid="queue-alignment"
+                    aria-label="Strategic alignment (not yet available)"
+                    style={{ fontSize: 12, color: 'var(--ink-faint)', width: 70, textAlign: 'right' }}
+                  >
+                    — aln
+                  </span>
+                  <SubmissionBadge status={status} />
+                  <button
+                    type="button"
+                    data-testid="queue-open-review"
+                    aria-label={`Review ${r.memberName}`}
+                    disabled={!canReview}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      open();
+                    }}
+                    className="btn btn-quiet btn-sm"
+                    style={{ padding: 4, color: canReview ? 'var(--ink-faint)' : 'var(--line-bright)' }}
+                  >
+                    <Icon.chevR size={18} />
+                  </button>
                 </div>
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
+      )}
+
+      {!isLoading && !isError && rows.length > 0 && (
+        <div className="between" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, padding: '0 4px' }}>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--ink-low)' }} data-testid="queue-count-summary">
+            {rows.length} of {all.length} reports
+          </span>
+        </div>
       )}
     </section>
   );

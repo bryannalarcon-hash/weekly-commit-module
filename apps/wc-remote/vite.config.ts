@@ -1,11 +1,17 @@
 // apps/wc-remote/vite.config.ts — Vite 5 config for the Weekly Commit MF remote.
-// Wires @vitejs/plugin-react + @module-federation/vite (exposes ./WeeklyCommitApp,
+// Wires @vitejs/plugin-react + @module-federation/vite (exposes ./WeeklyCommitApp +
+// ./WeeklyCommitWidget — the self-contained dashboard tile a host embeds — with
 // react/react-dom as shared singletons) and a jsdom Vitest project for the render test.
 // CSS pipeline is pinned to the repo-root postcss.config.js so Tailwind content scanning
 // resolves correctly even when the build runs from this app subdirectory.
 /// <reference types="vitest" />
 import { fileURLToPath } from 'node:url';
-import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from 'vite';
+import {
+  defineConfig,
+  type Plugin,
+  type PreviewServer,
+  type ViteDevServer,
+} from 'vite';
 import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
 
@@ -45,6 +51,9 @@ export default defineConfig({
       filename: 'remoteEntry.js',
       exposes: {
         './WeeklyCommitApp': './src/WeeklyCommitApp.tsx',
+        // The self-contained dashboard widget (card + compact variants); mounts standalone via its
+        // own providers and calls back through onOpen(route) to ask the host to open the full module.
+        './WeeklyCommitWidget': './src/widget.tsx',
       },
       shared: {
         react: { singleton: true, requiredVersion: '^18.3.1' },

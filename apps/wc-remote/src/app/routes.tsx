@@ -65,7 +65,9 @@ function MyWeekRoute(): JSX.Element {
 function EditRoute(): JSX.Element {
   const { commitId = '' } = useParams();
   const nav = useNavigate();
-  return <EditCommit commitId={commitId} onLocked={() => nav('/')} />;
+  return (
+    <EditCommit commitId={commitId} onBack={() => nav('/')} onLocked={() => nav('/')} />
+  );
 }
 
 function HistoryRoute(): JSX.Element {
@@ -125,6 +127,7 @@ function DashboardRoute(): JSX.Element {
             .then((res) => nav(`/manager/review/${res.commitId}`))
             .catch(() => nav('/manager'));
         }}
+        onOpenQueue={() => nav('/manager')}
       />
     </RequireManager>
   );

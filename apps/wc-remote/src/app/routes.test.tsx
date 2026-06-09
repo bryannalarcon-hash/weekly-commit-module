@@ -40,8 +40,8 @@ describe('WcRoutes (internal route table)', () => {
   it('mounts My Week at "/" with the manager sub-nav available', async () => {
     renderAt('/');
     expect(await screen.findByTestId('start-week')).toBeInTheDocument();
-    // Manager → the top-level manager nav item is present.
-    expect(screen.getByTestId('wc-nav-/manager')).toBeInTheDocument();
+    // Manager → the top-level Manager tab is present in the re-skinned WcShell sub-nav.
+    expect(screen.getByTestId('wc-nav-manager')).toBeInTheDocument();
   });
 
   it('mounts the History route', async () => {
@@ -64,25 +64,27 @@ describe('WcRoutes (internal route table)', () => {
     });
   });
 
-  it('mounts the manager Review Queue (RequireManager passes) with the manager sub-nav', async () => {
+  it('mounts the manager Review Queue (RequireManager passes) with the manager sub-row', async () => {
     renderAt('/manager');
-    // The manager sub-nav (queue/dashboard) renders only on /manager* and only for managers.
-    expect(await screen.findByTestId('manager-subnav')).toBeInTheDocument();
-    expect(screen.getByTestId('subnav-queue')).toBeInTheDocument();
-    expect(screen.getByTestId('subnav-dashboard')).toBeInTheDocument();
+    // The manager 2nd sub-row (Review Queue / Team Dashboard) renders only on /manager* + for managers.
+    expect(await screen.findByTestId('wc-manager-subnav')).toBeInTheDocument();
+    expect(screen.getByTestId('wc-nav-mgr-queue')).toBeInTheDocument();
+    expect(screen.getByTestId('wc-nav-mgr-dashboard')).toBeInTheDocument();
   });
 
   it('mounts the manager Dashboard route', async () => {
     renderAt('/manager/dashboard');
     await waitFor(() => {
-      expect(screen.getByTestId('manager-subnav')).toBeInTheDocument();
+      expect(screen.getByTestId('wc-manager-subnav')).toBeInTheDocument();
     });
+    // The Team Dashboard sub-row item is the active one on /manager/dashboard.
+    expect(screen.getByTestId('wc-nav-mgr-dashboard')).toHaveAttribute('aria-current', 'true');
   });
 
   it('mounts the manager Review Detail route', async () => {
     renderAt('/manager/review/some-commit-id');
     await waitFor(() => {
-      expect(screen.getByTestId('manager-subnav')).toBeInTheDocument();
+      expect(screen.getByTestId('wc-manager-subnav')).toBeInTheDocument();
     });
   });
 

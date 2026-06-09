@@ -1,8 +1,10 @@
-// apps/wc-remote/src/screens/Reconciliation.test.tsx — RTL tests for the planned-vs-actual view
-// (brief §6.6, U20). MSW-backed. Covers: the NOT-YET-LOCKED guard (Draft → redirect back), the
-// in-progress (RECONCILING) state with per-row flags + an editable actual-status select, the
-// added-after-lock flag, the carry-forward action (confirm + mutation), the reconciled read-only
-// state, loading skeleton, and error.
+// apps/wc-remote/src/screens/Reconciliation.test.tsx — RTL tests for the re-skinned planned-vs-actual
+// view (brief §6.6, U20). MSW-backed, RTK Query real. Covers: the NOT-YET-LOCKED guard (Draft →
+// redirect back), the in-progress (RECONCILING) state with the three tinted metric tiles, per-row
+// ItemStatus flags + an editable actual-status select, the added-after-lock flag ("NOT PLANNED"
+// placeholder + amber added card), the unified "Carry forward & reconcile" action (confirm dialog →
+// carry-forward + markReconciled mutations), the reconciled read-only success banner, loading
+// skeleton, and error.
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -50,30 +52,52 @@ describe('Reconciliation', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
+  it('shows the three tinted metric tiles summarizing completion', async () => {
+    viewReturns(reconcilingView);
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    const summary = await screen.findByTestId('recon-summary');
+    // One planned row (incomplete) → 0/1 completed, 0% completion, 1 carrying over.
+    expect(within(summary).getByText(/completion/i)).toBeInTheDocument();
+    expect(within(summary).getByText(/completed/i)).toBeInTheDocument();
+    expect(within(summary).getByText(/carrying over/i)).toBeInTheDocument();
+    expect(within(summary).getByText('0/1')).toBeInTheDocument();
+    expect(within(summary).getAllByTestId('metric')).toHaveLength(3);
+  });
+
   it('shows planned-vs-actual rows with flags and an editable status while RECONCILING', async () => {
     viewReturns(reconcilingView);
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
 
     const rows = await screen.findAllByTestId('recon-row');
     expect(rows).toHaveLength(2);
-    // An incomplete planned item and an added-after-lock item are both flagged.
-    expect(within(rows[0]!).getByTestId('recon-flag')).toHaveTextContent(/incomplete/i);
-    expect(rows[1]).toHaveAttribute('data-flag', 'ADDED_AFTER_LOCK');
-    expect(within(rows[1]!).getByText(/not in the locked plan/i)).toBeInTheDocument();
+    // The incomplete planned item carries the Incomplete flag + the carry-forward hint.
+    const planned = rows.find((r) => r.getAttribute('data-flag') === 'INCOMPLETE')!;
+    expect(within(planned).getByTestId('recon-flag')).toHaveTextContent(/incomplete/i);
+    expect(within(planned).getByText(/will carry forward/i)).toBeInTheDocument();
+    // The added-after-lock item is flagged and sits opposite a "NOT PLANNED" placeholder.
+    const added = rows.find((r) => r.getAttribute('data-flag') === 'ADDED_AFTER_LOCK')!;
+    expect(within(added).getByTestId('recon-flag')).toHaveTextContent(/added after lock/i);
+    expect(screen.getByText('NOT PLANNED')).toBeInTheDocument();
     // Status is editable in RECONCILING.
-    expect(within(rows[0]!).getByTestId('recon-status-select')).toBeInTheDocument();
+    expect(within(planned).getByTestId('recon-status-select')).toBeInTheDocument();
   });
 
-  it('fires the carry-forward mutation through the confirm dialog', async () => {
+  it('fires carry-forward then markReconciled through the unified confirm dialog', async () => {
     viewReturns(reconcilingView);
     const carry = vi.fn(() => HttpResponse.json({}));
+    const reconciled = vi.fn(() => HttpResponse.json({}));
     server.use(http.post('*/commits/c1/carry-forward', carry));
+    server.use(http.post('*/commits/c1/reconciled', reconciled));
     const user = userEvent.setup();
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
 
+    // The header "Carry forward & reconcile" action opens the confirm dialog.
     await user.click(await screen.findByTestId('carry-forward'));
     await user.click(await screen.findByTestId('confirm-accept'));
+    // There is an incomplete item, so it carries forward AND marks the week reconciled.
     await waitFor(() => expect(carry).toHaveBeenCalled());
+    await waitFor(() => expect(reconciled).toHaveBeenCalled());
   });
 
   it('debounces a per-item actual-status change into a single PATCH', async () => {
@@ -93,18 +117,28 @@ describe('Reconciliation', () => {
     await waitFor(() => expect(patch).toHaveBeenCalled());
   });
 
-  it('marks the week reconciled while RECONCILING', async () => {
-    viewReturns(reconcilingView);
+  it('marks reconciled even when nothing is incomplete (no carry-forward)', async () => {
+    viewReturns({
+      ...reconcilingView,
+      rows: [
+        { commitItemId: 'i1', plannedText: 'Done', plannedTier: 'QUEEN', supportingOutcomeId: 's1', actualStatus: 'COMPLETE', flag: 'COMPLETED' },
+      ],
+    });
+    const carry = vi.fn(() => HttpResponse.json({}));
     const reconciled = vi.fn(() => HttpResponse.json({}));
+    server.use(http.post('*/commits/c1/carry-forward', carry));
     server.use(http.post('*/commits/c1/reconciled', reconciled));
     const user = userEvent.setup();
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
 
-    await user.click(await screen.findByTestId('mark-reconciled'));
+    await user.click(await screen.findByTestId('carry-forward'));
+    await user.click(await screen.findByTestId('confirm-accept'));
     await waitFor(() => expect(reconciled).toHaveBeenCalled());
+    // Nothing incomplete → no carry-forward request fires.
+    expect(carry).not.toHaveBeenCalled();
   });
 
-  it('renders a reconciled week read-only (no status select)', async () => {
+  it('renders a reconciled week as a read-only success banner (no status select)', async () => {
     viewReturns({
       ...reconcilingView,
       lifecycleState: 'RECONCILED',
@@ -114,8 +148,10 @@ describe('Reconciliation', () => {
     });
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
     await screen.findAllByTestId('recon-row');
-    expect(screen.getByTestId('lifecycle-badge')).toHaveAttribute('data-state', 'RECONCILED');
+    expect(await screen.findByTestId('recon-success')).toHaveTextContent(/week reconciled/i);
     expect(screen.queryByTestId('recon-status-select')).not.toBeInTheDocument();
+    // The unified reconcile action is gone once the week is closed.
+    expect(screen.queryByTestId('carry-forward')).not.toBeInTheDocument();
   });
 
   it('shows an error state on failure', async () => {
