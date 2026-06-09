@@ -77,8 +77,14 @@ public class CommitItem extends AbstractAuditingEntity {
     return supportingOutcomeId != null;
   }
 
-  /** Carry-forward predicate: only INCOMPLETE items roll into the next week. */
-  public boolean isIncomplete() {
-    return status == CommitItemStatus.INCOMPLETE;
+  /**
+   * Carry-forward predicate: an item rolls into next week when it is UNFINISHED — either explicitly
+   * INCOMPLETE, or still OPEN (never resolved during reconcile, and from the LOCKED escape hatch
+   * every item is still OPEN). This agrees with the reconciliation diff, which flags OPEN as
+   * INCOMPLETE, so nothing the user sees as unfinished is silently dropped (FR3). COMPLETE and
+   * already CARRIED_FORWARD items are excluded.
+   */
+  public boolean isUnfinished() {
+    return status == CommitItemStatus.OPEN || status == CommitItemStatus.INCOMPLETE;
   }
 }

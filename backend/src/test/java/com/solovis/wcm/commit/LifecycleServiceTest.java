@@ -245,6 +245,28 @@ class LifecycleServiceTest {
   }
 
   @Test
+  void carryForwardCarriesOpenItemsLeftUnresolved() {
+    // FR3 / KTD: an item left OPEN through reconcile (the diff flags it INCOMPLETE) must roll into
+    // next week, not be silently dropped. From the LOCKED escape hatch every item is still OPEN.
+    WeeklyCommit locked = commit(LifecycleState.LOCKED);
+    locked.addItem(item(true, CommitItemStatus.OPEN, ChessTier.KING));
+    locked.addItem(item(true, CommitItemStatus.COMPLETE, ChessTier.PAWN));
+    WeeklyCommit fromLocked = service.carryForward(locked, WEEK.plusWeeks(1));
+    // Only the OPEN item carries; the COMPLETE item does not.
+    assertThat(fromLocked.getItems()).hasSize(1);
+    assertThat(fromLocked.getItems().get(0).getChessTier()).isEqualTo(ChessTier.KING);
+
+    WeeklyCommit reconciled = commit(LifecycleState.RECONCILED);
+    CommitItem open = item(true, CommitItemStatus.OPEN, ChessTier.ROOK);
+    reconciled.addItem(open);
+    WeeklyCommit next = service.carryForward(reconciled, WEEK.plusWeeks(1));
+    assertThat(next.getItems()).hasSize(1);
+    assertThat(next.getItems().get(0).getCarriedFromItemId()).isEqualTo(open.getId());
+    // The source OPEN item is marked CARRIED_FORWARD just like an INCOMPLETE one.
+    assertThat(open.getStatus()).isEqualTo(CommitItemStatus.CARRIED_FORWARD);
+  }
+
+  @Test
   void carryForwardRejectedFromDraftOrReconciling() {
     for (LifecycleState illegal : List.of(LifecycleState.DRAFT, LifecycleState.RECONCILING)) {
       WeeklyCommit wc = commit(illegal);
@@ -276,9 +298,16 @@ class LifecycleServiceTest {
   }
 
   @Test
-  void statusEditRejectedOutsideDraftOrReconciling() {
+  void statusEditLegalOnlyInReconciling() {
+    // KTD4: a status-only edit is legal ONLY while RECONCILING — including DRAFT now rejects it
+    // (an item's ACTUAL has no meaning before the plan is locked).
+    service.assertItemEditAllowed(commit(LifecycleState.RECONCILING), false);
     for (LifecycleState s :
-        List.of(LifecycleState.LOCKED, LifecycleState.RECONCILED, LifecycleState.CARRY_FORWARD)) {
+        List.of(
+            LifecycleState.DRAFT,
+            LifecycleState.LOCKED,
+            LifecycleState.RECONCILED,
+            LifecycleState.CARRY_FORWARD)) {
       assertThatThrownBy(() -> service.assertItemEditAllowed(commit(s), false))
           .as("status edit in %s", s)
           .isInstanceOf(IllegalTransitionException.class);

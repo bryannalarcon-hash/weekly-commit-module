@@ -1,8 +1,11 @@
 // LifecycleService — server-enforced weekly-commit FSM (KTD3/KTD4/KTD5), pure domain logic.
 // Owns the legal-transition guards and the side effects each transition implies: LOCK writes the
 // immutable snapshot (guard: every item linked); RECONCILED forces ManagerReview=REVIEWED; CARRY
-// FORWARD copies INCOMPLETE items into a fresh next-week DRAFT. No repositories — callers persist
-// the returned objects, keeping this exhaustively unit-testable without a database.
+// FORWARD copies UNFINISHED items (OPEN or INCOMPLETE) into a fresh next-week DRAFT. No
+// repositories
+// — callers persist the returned objects, keeping this exhaustively unit-testable without a
+// database.
+// Status-only item edits are legal ONLY while RECONCILING (KTD4); content edits only while DRAFT.
 package com.solovis.wcm.commit;
 
 import com.solovis.wcm.review.ManagerReview;
@@ -71,9 +74,12 @@ public class LifecycleService {
 
   /**
    * RECONCILED -> CARRY_FORWARD, or the LOCKED -> CARRY_FORWARD escape hatch. Builds the next
-   * week's DRAFT and copies every INCOMPLETE item into it (carriedFromItemId = source id, status
-   * reset to OPEN). Marks the source items CARRIED_FORWARD and the source commit CARRY_FORWARD.
-   * Returns the new DRAFT commit (with its items) for the caller to persist.
+   * week's DRAFT and copies every UNFINISHED item into it — OPEN or INCOMPLETE (carriedFromItemId =
+   * source id, status reset to OPEN). This matches the reconciliation diff (which flags OPEN as
+   * INCOMPLETE) so nothing the user sees as unfinished is dropped, and the LOCKED escape hatch
+   * (where every item is still OPEN) carries its whole plan forward. Marks the carried source items
+   * CARRIED_FORWARD and the source commit CARRY_FORWARD. Returns the new DRAFT for the caller to
+   * persist.
    */
   public WeeklyCommit carryForward(WeeklyCommit commit, LocalDate nextWeekStart) {
     LifecycleState from = commit.getLifecycleState();
@@ -88,7 +94,7 @@ public class LifecycleService {
             .lifecycleState(LifecycleState.DRAFT)
             .build();
     for (CommitItem source : commit.getItems()) {
-      if (source.isIncomplete()) {
+      if (source.isUnfinished()) {
         next.addItem(
             CommitItem.builder()
                 .text(source.getText())
@@ -105,8 +111,9 @@ public class LifecycleService {
   }
 
   /**
-   * Guard for item mutations: a status-only edit is legal ONLY while RECONCILING; a content edit
-   * (text/link/tier) is rejected once the commit leaves DRAFT. Throws on violation.
+   * Guard for item mutations (KTD4): a content edit (text/link/tier) is legal ONLY while DRAFT; a
+   * status-only edit is legal ONLY while RECONCILING. In DRAFT an item's ACTUAL has no meaning yet
+   * (the plan isn't locked), so a status patch is rejected there too. Throws on violation.
    */
   public void assertItemEditAllowed(WeeklyCommit commit, boolean contentChanged) {
     LifecycleState state = commit.getLifecycleState();
@@ -114,9 +121,9 @@ public class LifecycleService {
       throw new IllegalTransitionException(
           state, state, "content edits are only allowed while DRAFT");
     }
-    if (!contentChanged && state != LifecycleState.DRAFT && state != LifecycleState.RECONCILING) {
+    if (!contentChanged && state != LifecycleState.RECONCILING) {
       throw new IllegalTransitionException(
-          state, state, "status edits are only allowed while DRAFT or RECONCILING");
+          state, state, "status edits are only allowed while RECONCILING");
     }
   }
 

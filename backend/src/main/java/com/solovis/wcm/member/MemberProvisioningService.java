@@ -1,8 +1,13 @@
 // MemberProvisioningService — JIT (just-in-time) Member provisioning from an Auth0 identity.
 // findOrProvision is idempotent: it resolves an existing Member by auth0Subject, or creates a
-// new EMPLOYEE on first sight. Collaborates with MemberRepository; runs in a single transaction.
+// new EMPLOYEE on first sight. Concurrency-safe: if two simultaneous first-logins race to INSERT
+// the
+// same subject, the loser's unique-constraint violation is caught and the now-committed row
+// re-read,
+// so a single Member is always returned. Collaborates with MemberRepository; single transaction.
 package com.solovis.wcm.member;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +36,19 @@ public class MemberProvisioningService {
     }
     return memberRepository
         .findByAuth0Subject(auth0Subject)
-        .orElseGet(() -> memberRepository.save(buildEmployee(auth0Subject, email, displayName)));
+        .orElseGet(() -> insertOrReread(auth0Subject, email, displayName));
+  }
+
+  /**
+   * Insert a fresh EMPLOYEE for {@code auth0Subject}; if a concurrent first-login already inserted
+   * it (unique-constraint race), re-read and return the now-committed row instead of failing.
+   */
+  private Member insertOrReread(String auth0Subject, String email, String displayName) {
+    try {
+      return memberRepository.saveAndFlush(buildEmployee(auth0Subject, email, displayName));
+    } catch (DataIntegrityViolationException race) {
+      return memberRepository.findByAuth0Subject(auth0Subject).orElseThrow(() -> race);
+    }
   }
 
   private Member buildEmployee(String auth0Subject, String email, String displayName) {

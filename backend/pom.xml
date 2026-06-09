@@ -28,6 +28,7 @@
         <spotless.version>2.43.0</spotless.version>
         <spotbugs.version>4.8.6.6</spotbugs.version>
         <google-java-format.version>1.22.0</google-java-format.version>
+        <springdoc.version>2.6.0</springdoc.version>
     </properties>
 
     <dependencies>
@@ -60,13 +61,26 @@
         </dependency>
 
         <!--
-          spring-security-core (not a security starter / not oauth2-resource-server):
-          JpaConfig#auditorProvider reads SecurityContextHolder in main code, which needs
-          this single core jar on the main classpath. A later security unit adds the starter.
+          springdoc-openapi (U10): serves /v3/api-docs + Swagger UI from the controller/DTO
+          annotations, so the frozen REST contract is machine-readable and the FE can generate
+          against it. webmvc-ui flavor matches spring-boot-starter-web (servlet stack).
         -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-core</artifactId>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!--
+          spring-boot-starter-oauth2-resource-server (U15): makes the API an OAuth2 resource
+          server that validates RS256 Auth0 JWTs (issuer/audience/JWKS). It pulls in
+          spring-security-core + spring-security-web + the JOSE/JWT stack transitively, so the
+          earlier explicit spring-security-core dep (which JpaConfig#auditorProvider needed for
+          SecurityContextHolder) is now dropped — it arrives with this starter.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
         <dependency>

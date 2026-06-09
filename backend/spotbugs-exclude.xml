@@ -1,13 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  SpotBugs exclude filter for the Weekly Commit Module backend.
-  Narrowly suppresses CT_CONSTRUCTOR_THROW on domain entities that validate their invariants in the
-  constructor (a deliberate, common JPA/DDD pattern): the throw guards a malformed entity, and these
-  classes are not exposed to untrusted finalizer-attack subclassing. All other detectors stay active.
+  SpotBugs exclude filter for the Weekly Commit Module backend. Each exclusion is narrow and
+  rationale-documented:
+  1. CT_CONSTRUCTOR_THROW on domain entities that validate invariants in the constructor (a
+     deliberate JPA/DDD pattern; the throw guards a malformed entity).
+  2. EI_EXPOSE_REP / EI_EXPOSE_REP2 on the DTO records (commit.dto, rcdo.dto, review.dto): these are
+     transient, serialize-once wire value objects whose List components are built once at
+     construction and never mutated; defensive-copying every record component adds noise without
+     real safety here. Records are immutable references in our request/response flow.
+  3. EI_EXPOSE_REP2 on the web controllers AND the JWT current-member provider: they store
+     constructor-injected Spring @Service beans (framework-managed singletons), which SpotBugs flags
+     as "external mutable object" — the standard dependency-injection idiom, not a real escape.
+  All other detectors stay active.
 -->
 <FindBugsFilter>
   <Match>
     <Class name="com.solovis.wcm.commit.PulseReading"/>
     <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+  </Match>
+
+  <!-- DTO records: wire value objects with List components (see rationale #2). -->
+  <Match>
+    <Package name="~com\.solovis\.wcm\..*\.dto"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+
+  <!-- Controllers storing injected services (see rationale #3). -->
+  <Match>
+    <Class name="com.solovis.wcm.commit.CommitController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.solovis.wcm.commit.ReconciliationController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.solovis.wcm.rcdo.RcdoController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.solovis.wcm.review.ReviewController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.solovis.wcm.review.RollupController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
+  <!-- Identity seam storing the injected provisioning @Service (see rationale #3). -->
+  <Match>
+    <Class name="com.solovis.wcm.common.JwtCurrentMemberProvider"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>
 </FindBugsFilter>

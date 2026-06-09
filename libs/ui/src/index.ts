@@ -13,7 +13,7 @@ export function lifecycleColor(state: LifecycleState): string {
       return 'yellow';
     case 'RECONCILED':
       return 'green';
-    case 'CARRIED_FORWARD':
+    case 'CARRY_FORWARD':
       return 'purple';
   }
 }

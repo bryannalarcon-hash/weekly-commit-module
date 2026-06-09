@@ -9,10 +9,16 @@ import com.solovis.wcm.WcmPostgresContainer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+// Runs under the "test" profile with TestJwtConfig so the resource-server security chain has a
+// JwtDecoder to start; no token is attached here, so auditing falls back to the "system" auditor.
 @SpringBootTest
+@ActiveProfiles("test")
+@Import(com.solovis.wcm.common.TestJwtConfig.class)
 class AuditingEntityIT {
 
   @DynamicPropertySource

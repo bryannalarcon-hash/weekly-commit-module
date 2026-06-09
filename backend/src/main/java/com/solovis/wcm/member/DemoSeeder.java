@@ -1,15 +1,24 @@
 // DemoSeeder — @Profile("demo") CommandLineRunner that loads the SOLOVIS_SEED.md fixture:
-// the RCDO tree (RallyCry -> ... -> SupportingOutcomes), the ~13-member manager graph, and sample
-// weekly commits across lifecycle states. Deterministic (fixed UUIDs via deterministicId) and
-// idempotent (skips when the rally cry already exists), so hermetic tests stay clean and E2E/live
-// suites can reference rows by id. NOT a Flyway migration on purpose.
+// the RCDO tree (RallyCry -> ... -> SupportingOutcomes), the 14-member manager graph (1 exec + 4
+// line managers + 9 ICs), and sample weekly commits across lifecycle states. Post-DRAFT commits
+// also
+// get the rows their state's FSM invariants require: a frozen CommitSnapshot (+ SnapshotItems) for
+// any LOCKED/RECONCILING/RECONCILED commit, and a ManagerReview (REVIEWED for RECONCILED).
+// Determin-
+// istic (fixed UUIDs via deterministicId) and idempotent (skips when the rally cry already exists),
+// so hermetic tests stay clean and E2E/live suites can reference rows by id. NOT a Flyway
+// migration.
 package com.solovis.wcm.member;
 
 import com.solovis.wcm.commit.ChessTier;
 import com.solovis.wcm.commit.CommitItem;
 import com.solovis.wcm.commit.CommitItemRepository;
 import com.solovis.wcm.commit.CommitItemStatus;
+import com.solovis.wcm.commit.CommitSnapshot;
+import com.solovis.wcm.commit.CommitSnapshotRepository;
 import com.solovis.wcm.commit.LifecycleState;
+import com.solovis.wcm.commit.SnapshotItem;
+import com.solovis.wcm.commit.SnapshotItemRepository;
 import com.solovis.wcm.commit.WeeklyCommit;
 import com.solovis.wcm.commit.WeeklyCommitRepository;
 import com.solovis.wcm.rcdo.DefiningObjective;
@@ -17,9 +26,14 @@ import com.solovis.wcm.rcdo.Outcome;
 import com.solovis.wcm.rcdo.RallyCry;
 import com.solovis.wcm.rcdo.RcdoRepository;
 import com.solovis.wcm.rcdo.SupportingOutcome;
+import com.solovis.wcm.review.ManagerReview;
+import com.solovis.wcm.review.ManagerReviewRepository;
+import com.solovis.wcm.review.ReviewState;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
@@ -37,18 +51,27 @@ public class DemoSeeder implements CommandLineRunner {
   private final RcdoRepository rcdo;
   private final WeeklyCommitRepository commits;
   private final CommitItemRepository commitItems;
+  private final CommitSnapshotRepository snapshots;
+  private final SnapshotItemRepository snapshotItems;
+  private final ManagerReviewRepository reviews;
 
   public DemoSeeder(
       TeamRepository teams,
       MemberRepository members,
       RcdoRepository rcdo,
       WeeklyCommitRepository commits,
-      CommitItemRepository commitItems) {
+      CommitItemRepository commitItems,
+      CommitSnapshotRepository snapshots,
+      SnapshotItemRepository snapshotItems,
+      ManagerReviewRepository reviews) {
     this.teams = teams;
     this.members = members;
     this.rcdo = rcdo;
     this.commits = commits;
     this.commitItems = commitItems;
+    this.snapshots = snapshots;
+    this.snapshotItems = snapshotItems;
+    this.reviews = reviews;
   }
 
   /** Stable UUID for a logical key so reruns and external suites reference identical rows. */
@@ -247,8 +270,9 @@ public class DemoSeeder implements CommandLineRunner {
     LocalDate currentWeek =
         LocalDate.now().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
     LocalDate priorWeek = currentWeek.minusWeeks(1);
+    Instant lockedAt = Instant.parse("2026-06-01T09:00:00Z");
 
-    // Diego: RECONCILED, 3 items, one carried forward.
+    // Diego: RECONCILED, 3 items, one carried forward. Reviewer = Diego's manager (Priya).
     WeeklyCommit diego =
         commit(
             "commit:diego",
@@ -276,8 +300,10 @@ public class DemoSeeder implements CommandLineRunner {
         CommitItemStatus.COMPLETE,
         "so:so1.2.b",
         ChessTier.PAWN);
+    freezeSnapshot("snapshot:diego", diego, lockedAt);
+    reviewedReview("review:diego", diego, deterministicId("member:priya"), lockedAt);
 
-    // Lena: LOCKED, 2 items.
+    // Lena: LOCKED, 2 items. A LOCKED commit already carries a frozen snapshot, no review yet.
     WeeklyCommit lena =
         commit("commit:lena", deterministicId("member:lena"), currentWeek, LifecycleState.LOCKED);
     item(
@@ -294,8 +320,9 @@ public class DemoSeeder implements CommandLineRunner {
         CommitItemStatus.OPEN,
         "so:so2.2.a",
         ChessTier.KNIGHT);
+    freezeSnapshot("snapshot:lena", lena, lockedAt);
 
-    // Noah: DRAFT, one item unlinked (to show the submit guard).
+    // Noah: DRAFT, one item unlinked (to show the submit guard). No snapshot/review for a DRAFT.
     WeeklyCommit noah =
         commit("commit:noah", deterministicId("member:noah"), currentWeek, LifecycleState.DRAFT);
     item(
@@ -313,7 +340,8 @@ public class DemoSeeder implements CommandLineRunner {
         null,
         ChessTier.BISHOP);
 
-    // Omar: RECONCILING prior week, planned-vs-actual gap (1 incomplete).
+    // Omar: RECONCILING prior week, planned-vs-actual gap (1 incomplete). Snapshot frozen at lock;
+    // review in progress (INCOMPLETE) by Omar's manager (Wei) — RECONCILED is not yet reached.
     WeeklyCommit omar =
         commit(
             "commit:omar", deterministicId("member:omar"), priorWeek, LifecycleState.RECONCILING);
@@ -331,6 +359,8 @@ public class DemoSeeder implements CommandLineRunner {
         CommitItemStatus.INCOMPLETE,
         "so:so4.1.b",
         ChessTier.BISHOP);
+    freezeSnapshot("snapshot:omar", omar, lockedAt);
+    inProgressReview("review:omar", omar, deterministicId("member:wei"));
   }
 
   private WeeklyCommit commit(String key, UUID memberId, LocalDate week, LifecycleState state) {
@@ -361,5 +391,61 @@ public class DemoSeeder implements CommandLineRunner {
             .chessTier(tier)
             .build();
     commitItems.saveAndFlush(ci);
+  }
+
+  /**
+   * Freeze the commit's live items into a CommitSnapshot (+ SnapshotItems) — the KTD4 invariant
+   * that any post-LOCK commit (LOCKED/RECONCILING/RECONCILED) must already have a captured plan.
+   * Mirrors SnapshotItem.freeze: text/link/tier only, never status, with the source item id as the
+   * join key.
+   */
+  private void freezeSnapshot(String key, WeeklyCommit commit, Instant capturedAt) {
+    CommitSnapshot snapshot =
+        CommitSnapshot.builder()
+            .id(deterministicId(key))
+            .weeklyCommitId(commit.getId())
+            .capturedAt(capturedAt)
+            .build();
+    snapshots.saveAndFlush(snapshot);
+    List<CommitItem> live = commitItems.findByWeeklyCommitId(commit.getId());
+    for (CommitItem source : live) {
+      SnapshotItem frozen =
+          SnapshotItem.builder()
+              .id(deterministicId(key + ":" + source.getId()))
+              .snapshotId(snapshot.getId())
+              .commitItemId(source.getId())
+              .text(source.getText())
+              .supportingOutcomeId(source.getSupportingOutcomeId())
+              .chessTier(source.getChessTier())
+              .build();
+      snapshotItems.saveAndFlush(frozen);
+    }
+  }
+
+  /**
+   * A REVIEWED ManagerReview (the RECONCILED invariant: a manager reviewed it), by {@code
+   * reviewer}.
+   */
+  private void reviewedReview(
+      String key, WeeklyCommit commit, UUID reviewerId, Instant reviewedAt) {
+    reviews.saveAndFlush(
+        ManagerReview.builder()
+            .id(deterministicId(key))
+            .weeklyCommitId(commit.getId())
+            .reviewerId(reviewerId)
+            .state(ReviewState.REVIEWED)
+            .reviewedAt(reviewedAt)
+            .build());
+  }
+
+  /** An in-progress (INCOMPLETE) ManagerReview for a RECONCILING commit, by {@code reviewer}. */
+  private void inProgressReview(String key, WeeklyCommit commit, UUID reviewerId) {
+    reviews.saveAndFlush(
+        ManagerReview.builder()
+            .id(deterministicId(key))
+            .weeklyCommitId(commit.getId())
+            .reviewerId(reviewerId)
+            .state(ReviewState.INCOMPLETE)
+            .build());
   }
 }

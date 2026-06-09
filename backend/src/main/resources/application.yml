@@ -1,5 +1,12 @@
 # application.yml — core Spring Boot config for the Weekly Commit Module backend.
-# Wires the Postgres datasource, Hibernate (validate-only, UTC, no open-in-view) and Flyway migrations.
+# Wires the Postgres datasource, Hibernate (validate-only, UTC, no open-in-view), Flyway migrations,
+# and the Auth0 resource-server settings (U15). The Auth0 issuer/audience come from env refs and
+# default to EMPTY so the app still starts with no Auth0 configured (tests / bare local boot); a
+# non-blank issuer activates the prod RS256 JwtDecoder (see SecurityConfig).
+wcm:
+  auth0:
+    issuer-uri: ${AUTH0_ISSUER_URI:}
+    audience: ${AUTH0_AUDIENCE:}
 spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/wcm}
