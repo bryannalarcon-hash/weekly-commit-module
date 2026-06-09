@@ -9,15 +9,21 @@ Do these when ready to wire the **live** integrations. Until then the app builds
 
 1. Create a free **Auth0 tenant** (auth0.com → sign up). Region note: the tenant domain looks like `your-tenant.us.auth0.com`. → `VITE_AUTH0_DOMAIN`, and `AUTH0_ISSUER_URI = https://<domain>/` (trailing slash).
 2. **Applications → Create Application** → *Single Page Web Applications* (React). In its settings:
-   - **Allowed Callback URLs**: `http://localhost:5173, https://<deployed-cloudfront-domain>`
+   - **Allowed Callback URLs**: `http://localhost:4200, http://localhost:5173, https://<deployed-cloudfront-domain>`
+     (`:4200` is the host-shell dev origin; `:5173` a standalone preview; add the real deployed origin for prod.)
    - **Allowed Logout URLs**: same
    - **Allowed Web Origins**: same
    - Copy the **Client ID** → `VITE_AUTH0_CLIENT_ID`.
 3. **APIs → Create API**:
    - Identifier (audience): `https://api.wcm` (any URI; must match) → `VITE_AUTH0_AUDIENCE` and `AUTH0_AUDIENCE`.
    - Signing alg: **RS256**. Enable **RBAC** and **Add Permissions in the Access Token** (API → Settings).
-   - **Permissions** tab: add `reconcile:commits` (manager capability) and any others the app guards.
-4. **Roles** (User Management → Roles): create a `manager` role, assign it the `reconcile:commits` permission; assign the role to the demo manager users. (Employees get no extra permission.)
+   - **Permissions** tab: add `reconcile:commits` (manager capability — gates rollup/review/reconcile)
+     and `admin:rcdo` (gates the Strategy **edit-tree**: create/update/delete RCDO nodes). Add any
+     others the app guards.
+4. **Roles** (User Management → Roles):
+   - create a `manager` role → assign `reconcile:commits` → assign to the demo manager users;
+   - create an `admin` role → assign `admin:rcdo` (the RCDO strategy editor) → assign to the
+     org-root/exec user. (Employees get no extra permission; an admin may also be a manager.)
 5. No client secret is needed (SPA uses PKCE; the backend validates via JWKS).
 
 **Result → fill in `.env`:** `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID`, `VITE_AUTH0_AUDIENCE`, `AUTH0_ISSUER_URI`, `AUTH0_AUDIENCE`.
