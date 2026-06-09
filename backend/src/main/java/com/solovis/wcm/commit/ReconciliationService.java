@@ -1,9 +1,11 @@
 // ReconciliationService — owns the reconcile half of the lifecycle (U13). The actor model splits by
 // transition (KTD6): the MANAGER who manages the commit's owner drives the LOCKED->RECONCILING and
 // RECONCILING->RECONCILED transitions (loadAsManager: canReview() && manages the owner), matching
-// ReviewService; the OWNER records actuals (status patches), reads their own planned-vs-actual
-// diff,
-// and carries their incomplete items into next week (loadOwned). The diff joins the frozen snapshot
+// ReviewService; the OWNER records actuals (status patches) and carries their incomplete items into
+// next week (loadOwned). The planned-vs-actual diff GET is readable by the OWNER OR the owner's
+// MANAGER (loadOwnerOrManager, mirroring CommitService.get — the manager drives the lifecycle and
+// already reads the raw commit/rollup, so they must also read the diff for their own report; a
+// manager reaches only their own reports). The diff joins the frozen snapshot
 // (planned) to live CommitItem.status (actual) on commitItemId, flagging completed/incomplete/
 // carried and ADDED_AFTER_LOCK (a live item with no plan line). Pre-LOCK (no snapshot) the diff is
 // not applicable — it returns an empty view rather than flagging in-progress draft items as
@@ -138,11 +140,14 @@ public class ReconciliationService {
 
   /**
    * GET /commits/{id}/reconciliation — planned (snapshot) vs actual (live status). Joins on
-   * commitItemId; a live item absent from the snapshot is ADDED_AFTER_LOCK.
+   * commitItemId; a live item absent from the snapshot is ADDED_AFTER_LOCK. Readable by the OWNER
+   * OR the owner's MANAGER (loadOwnerOrManager) — the manager drives the reconcile lifecycle and
+   * already reads the raw commit/rollup, so denying them the diff for their own report was an authz
+   * gap. The WRITE/transition paths stay strictly OWNER-only or manager-only as before.
    */
   @Transactional(readOnly = true)
   public ReconciliationView reconciliation(UUID commitId) {
-    WeeklyCommit commit = loadOwned(commitId);
+    WeeklyCommit commit = loadOwnerOrManager(commitId);
 
     // No snapshot exists until LOCK. For a pre-LOCK commit (DRAFT) the live items ARE the
     // plan-in-progress, not post-lock additions — joining them against an empty snapshot would
@@ -266,6 +271,30 @@ public class ReconciliationService {
             .orElseThrow(() -> new ResourceNotFoundException("commit " + commitId + " not found"));
     if (!commit.getMemberId().equals(currentMember.currentMemberId())) {
       throw new ForbiddenException("commit " + commitId + " is not owned by the acting member");
+    }
+    return commit;
+  }
+
+  /**
+   * Load the commit, then allow the acting member if they are the OWNER or the owner's MANAGER —
+   * the same row-level read rule CommitService.get enforces (a manager only reaches their own
+   * reports). 403 for anyone else. Used by the read-only diff GET, NOT by the write/transition
+   * paths.
+   */
+  private WeeklyCommit loadOwnerOrManager(UUID commitId) {
+    WeeklyCommit commit =
+        commits
+            .findById(commitId)
+            .orElseThrow(() -> new ResourceNotFoundException("commit " + commitId + " not found"));
+    Member acting = currentMember.currentMember();
+    boolean isOwner = commit.getMemberId().equals(acting.getId());
+    boolean isOwnersManager =
+        members
+            .findById(commit.getMemberId())
+            .map(owner -> Objects.equals(owner.getManagerId(), acting.getId()))
+            .orElse(false);
+    if (!isOwner && !isOwnersManager) {
+      throw new ForbiddenException("commit " + commitId + " is not visible to the acting member");
     }
     return commit;
   }

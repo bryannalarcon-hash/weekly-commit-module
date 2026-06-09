@@ -8,8 +8,10 @@
 // Proves: a status patch in RECONCILING -> 200 and persists; a status patch outside RECONCILING ->
 // 409; the GET /reconciliation diff flags an INCOMPLETE planned item and an ADDED_AFTER_LOCK item;
 // the manager-driven RECONCILING -> RECONCILED forces the ManagerReview REVIEWED; an employee owner
-// cannot self-drive /reconcile or /reconciled (403); a non-managing manager is also 403; and
-// carry-forward into an already-taken next week is a clean 409, not a 500.
+// cannot self-drive /reconcile or /reconciled (403); a non-managing manager is also 403; the
+// GET /reconciliation diff is readable by the OWNER and the owner's MANAGER but 403 for an
+// unrelated manager or a peer non-manager (Finding #4/#11); and carry-forward into an already-taken
+// next week is a clean 409, not a 500.
 package com.solovis.wcm.commit;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -211,6 +213,61 @@ class ReconciliationControllerIT extends AbstractWebIT {
         .andExpect(
             jsonPath("$.rows[?(@.commitItemId=='%s')].flag".formatted(addedId))
                 .value("ADDED_AFTER_LOCK"));
+  }
+
+  @Test
+  void reconciliationDiffReadableByOwnerAndOwnersManager() throws Exception {
+    // Finding #4/#11: the owner's direct MANAGER drives the reconcile lifecycle and already reads
+    // the raw commit + rollup, so they must also be able to GET the planned-vs-actual diff for
+    // their
+    // own report. The OWNER reads it too. Both -> 200 with the diff rows present.
+    Member manager = managerMember("mgr");
+    Member owner = employee("read-owner", manager.getId());
+    UUID id = createAndLock(owner);
+    UUID plannedId = plannedItemId(id);
+
+    // Owner reads their own diff -> 200 with the planned row present.
+    mockMvc
+        .perform(get("/api/commits/{id}/reconciliation", id).with(asOwner(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rows[?(@.commitItemId=='%s')]".formatted(plannedId)).exists());
+
+    // The owner's manager reads the same report's diff -> 200 with the planned row present.
+    mockMvc
+        .perform(get("/api/commits/{id}/reconciliation", id).with(asManager(manager)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rows[?(@.commitItemId=='%s')]".formatted(plannedId)).exists());
+  }
+
+  @Test
+  void reconciliationDiffForbiddenForUnrelatedManager() throws Exception {
+    // Finding #4/#11: a genuine manager who does NOT manage the owner clears the URL filter
+    // (any authenticated member may reach the GET) but must fail the service row-level check ->
+    // 403.
+    Member manager = managerMember("mgr");
+    Member other = managerMember("other-mgr"); // has scope, but does NOT manage the owner
+    Member owner = employee("read-foreign-owner", manager.getId());
+    UUID id = createAndLock(owner);
+
+    mockMvc
+        .perform(get("/api/commits/{id}/reconciliation", id).with(asManager(other)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("forbidden"));
+  }
+
+  @Test
+  void reconciliationDiffForbiddenForPeerNonManager() throws Exception {
+    // Finding #4/#11: a peer employee (no manager scope, not the owner, not the owner's manager)
+    // must not read another member's diff -> 403.
+    Member manager = managerMember("mgr");
+    Member owner = employee("read-peer-owner", manager.getId());
+    Member peer = employee("read-peer", manager.getId()); // a sibling report, not a manager
+    UUID id = createAndLock(owner);
+
+    mockMvc
+        .perform(get("/api/commits/{id}/reconciliation", id).with(asOwner(peer)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("forbidden"));
   }
 
   @Test
