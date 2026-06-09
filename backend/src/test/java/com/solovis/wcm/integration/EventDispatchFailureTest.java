@@ -27,6 +27,7 @@ class EventDispatchFailureTest {
 
   private LockedCommitSyncFactory factory;
   private CalendarSyncPort calendar;
+  private OutlookService outlook;
   private CommitLockedCalendarConsumer consumer;
   private EventDispatcher dispatcher;
 
@@ -34,7 +35,11 @@ class EventDispatchFailureTest {
   void setUp() {
     factory = mock(LockedCommitSyncFactory.class);
     calendar = mock(CalendarSyncPort.class);
-    consumer = new CommitLockedCalendarConsumer(calendar, factory);
+    // Preference seam: default-enabled (mirrors the no-row default); recordLockSync is a no-op
+    // mock.
+    outlook = mock(OutlookService.class);
+    when(outlook.createEventOnLockEnabled(any())).thenReturn(true);
+    consumer = new CommitLockedCalendarConsumer(calendar, factory, outlook);
     dispatcher = new EventDispatcher(consumer);
   }
 

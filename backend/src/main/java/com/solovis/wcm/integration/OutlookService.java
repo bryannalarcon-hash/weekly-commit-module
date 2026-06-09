@@ -6,8 +6,13 @@
 // authorize
 // URL as GraphConsentController. disconnect() forgets the token. updateSettings() upserts the
 // prefs.
+// Also the SYSTEM-side preference seam for the commit.locked calendar consumer (no acting member):
+// createEventOnLockEnabled(memberId) gates the sync, recordLockSync(...) persists the Graph event
+// id onto the commit's items + stamps lastSyncAt.
 package com.solovis.wcm.integration;
 
+import com.solovis.wcm.commit.CommitItem;
+import com.solovis.wcm.commit.CommitItemRepository;
 import com.solovis.wcm.common.CurrentMemberProvider;
 import com.solovis.wcm.integration.dto.OutlookConnectResponse;
 import com.solovis.wcm.integration.dto.OutlookConnectionDto;
@@ -15,6 +20,8 @@ import com.solovis.wcm.integration.dto.OutlookSettingsRequest;
 import com.solovis.wcm.member.Member;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +35,7 @@ public class OutlookService {
   private final GraphProperties props;
   private final GraphConsentState consentState;
   private final CurrentMemberProvider currentMember;
+  private final CommitItemRepository commitItems;
 
   public OutlookService(
       GraphTokenService tokenService,
@@ -35,13 +43,49 @@ public class OutlookService {
       OutlookPreferenceRepository preferences,
       GraphProperties props,
       GraphConsentState consentState,
-      CurrentMemberProvider currentMember) {
+      CurrentMemberProvider currentMember,
+      CommitItemRepository commitItems) {
     this.tokenService = tokenService;
     this.tokens = tokens;
     this.preferences = preferences;
     this.props = props;
     this.consentState = consentState;
     this.currentMember = currentMember;
+    this.commitItems = commitItems;
+  }
+
+  /**
+   * Does {@code memberId} want a calendar event created when they lock their week? Defaults to TRUE
+   * when no preference row exists (matching the API's lazy default), so the toggle only ever OPTS
+   * OUT. System-side (called by the commit.locked consumer with no acting member).
+   */
+  @Transactional(readOnly = true)
+  public boolean createEventOnLockEnabled(UUID memberId) {
+    return preferences
+        .findByMemberId(memberId)
+        .map(OutlookPreference::isCreateEventOnLock)
+        .orElse(true);
+  }
+
+  /**
+   * Record a successful lock-sync: stamp the Graph event id on every item of the commit
+   * (CalendarSyncPort contract — "stored on the commit") and surface {@code at} as the member's
+   * lastSyncAt (the Settings "last synced" indicator), lazily creating the preference row. One
+   * writable transaction; idempotent (re-recording the same sync rewrites the same values).
+   */
+  @Transactional
+  public void recordLockSync(UUID memberId, UUID commitId, String eventId, Instant at) {
+    List<CommitItem> itemsOfCommit = commitItems.findByWeeklyCommitId(commitId);
+    itemsOfCommit.forEach(item -> item.setOutlookEventId(eventId));
+    commitItems.saveAll(itemsOfCommit);
+    OutlookPreference pref =
+        preferences
+            .findByMemberId(memberId)
+            .orElseGet(
+                () ->
+                    OutlookPreference.builder().memberId(memberId).createEventOnLock(true).build());
+    pref.setLastSyncAt(at);
+    preferences.save(pref);
   }
 
   /** GET /integration/outlook — the acting member's connection + preference state. */

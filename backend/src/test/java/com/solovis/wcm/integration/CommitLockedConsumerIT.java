@@ -1,10 +1,11 @@
 // CommitLockedConsumerIT — full-stack proof of the commit.locked -> calendar side-effect (U16/U26).
 // (1) End-to-end: an owner's submit (DRAFT->LOCKED) publishes commit.locked through the in-process
 // EventPublisher seam, and the StubCalendarAdapter is invoked exactly once for that commit,
-// recording
-// an event id. (2) Idempotency: replaying the SAME DomainEvent through the consumer's handle(...)
-// syncs only once (event-id dedup). (3) Fault isolation is covered structurally — the consumer
-// never
+// recording an event id. (2) Persistence: a successful sync stamps the returned event id on the
+// commit's items (outlook_event_id) and the member's OutlookPreference.lastSyncAt (the Settings
+// "last synced"). (3) Preference gate: createEventOnLock=false skips the port entirely while still
+// marking the event handled. (4) Idempotency: replaying the SAME DomainEvent through handle(...)
+// syncs only once (event-id dedup). Fault isolation is covered structurally — the consumer never
 // throws. Uses the default ("test", i.e. !graph) profile, so the active port is the stub.
 package com.solovis.wcm.integration;
 
@@ -41,6 +42,7 @@ class CommitLockedConsumerIT extends AbstractWebIT {
   @Autowired private RcdoRepository rcdo;
   @Autowired private CommitLockedCalendarConsumer consumer;
   @Autowired private CalendarSyncPort calendarPort; // StubCalendarAdapter under !graph
+  @Autowired private OutlookPreferenceRepository preferences;
 
   private Member member(String slug) {
     return members.saveAndFlush(
@@ -102,6 +104,51 @@ class CommitLockedConsumerIT extends AbstractWebIT {
     // called the calendar port once, recording an event id for this commit.
     assertThat(stub.syncedCommitCount()).isEqualTo(before + 1);
     assertThat(stub.eventIdFor(wc.getId())).isNotNull();
+  }
+
+  @Test
+  void successfulSyncPersistsEventIdOnItemsAndLastSyncAt() throws Exception {
+    StubCalendarAdapter stub = (StubCalendarAdapter) calendarPort;
+    Member owner = member("persistOwner");
+    WeeklyCommit wc = draftWithLinkedItem(owner);
+
+    mockMvc
+        .perform(
+            post("/api/commits/{id}/submit", wc.getId())
+                .with(TestJwtConfig.employee(owner.getAuth0Subject(), owner.getEmail())))
+        .andExpect(status().isOk());
+
+    // The port returned an event id — the consumer must PERSIST it, not just log it: stamped on the
+    // commit's items (CalendarSyncPort contract: "stored on the commit")…
+    String eventId = stub.eventIdFor(wc.getId());
+    assertThat(eventId).isNotNull();
+    assertThat(items.findByWeeklyCommitId(wc.getId()))
+        .isNotEmpty()
+        .allSatisfy(i -> assertThat(i.getOutlookEventId()).isEqualTo(eventId));
+    // …and surfaced as the member's lastSyncAt (the Settings screen's "last synced"), lazily
+    // creating the preference row when the member never opened settings.
+    assertThat(preferences.findByMemberId(owner.getId()))
+        .isPresent()
+        .hasValueSatisfying(p -> assertThat(p.getLastSyncAt()).isNotNull());
+  }
+
+  @Test
+  void disabledCreateEventOnLockSkipsTheSync() {
+    StubCalendarAdapter stub = (StubCalendarAdapter) calendarPort;
+    Member owner = member("optOutOwner");
+    WeeklyCommit wc = draftWithLinkedItem(owner);
+    // The member explicitly turned OFF "create a calendar event when I lock my week".
+    preferences.save(
+        OutlookPreference.builder().memberId(owner.getId()).createEventOnLock(false).build());
+
+    DomainEvent event = DomainEvent.of(DomainEvent.COMMIT_LOCKED, wc.getId(), owner.getId());
+    var result = consumer.handle(event);
+
+    // The toggle gates the side-effect: the port is never called, yet the event counts as handled
+    // (a deliberate skip needs no redelivery).
+    assertThat(result).isEmpty();
+    assertThat(stub.eventIdFor(wc.getId())).isNull();
+    assertThat(consumer.hasHandled(event.eventId())).isTrue();
   }
 
   @Test

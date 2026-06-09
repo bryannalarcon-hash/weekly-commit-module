@@ -7,11 +7,15 @@
 //   - SQS poller (via EventDispatcher) -> handleForRedelivery(...): RE-THROWS a sync failure so the
 //     poller LEAVES the message for SQS redelivery and, past maxReceiveCount, DLQ redrive (U26).
 // Idempotent: dedups by DomainEvent.eventId so a redelivered event calls the port at most once; a
-// failed sync rolls back the dedup mark so a redrive can retry. Builds the payload via
+// failed sync rolls back the dedup mark so a redrive can retry. Honors the member's
+// createEventOnLock preference (a deliberate opt-out skips the port but still counts as handled),
+// and on success persists the result via OutlookService.recordLockSync — the Graph event id onto
+// the commit's items and lastSyncAt onto the preference. Builds the payload via
 // LockedCommitSyncFactory.
 package com.solovis.wcm.integration;
 
 import com.solovis.wcm.event.DomainEvent;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -28,14 +32,16 @@ public class CommitLockedCalendarConsumer {
 
   private final CalendarSyncPort calendar;
   private final LockedCommitSyncFactory syncFactory;
+  private final OutlookService outlook;
 
   // Seen event ids — at-least-once delivery means an event may arrive twice; we sync once.
   private final Set<UUID> handledEventIds = ConcurrentHashMap.newKeySet();
 
   public CommitLockedCalendarConsumer(
-      CalendarSyncPort calendar, LockedCommitSyncFactory syncFactory) {
+      CalendarSyncPort calendar, LockedCommitSyncFactory syncFactory, OutlookService outlook) {
     this.calendar = calendar;
     this.syncFactory = syncFactory;
+    this.outlook = outlook;
   }
 
   /** In-process delivery: every published DomainEvent; only commit.locked triggers a sync. */
@@ -89,9 +95,25 @@ public class CommitLockedCalendarConsumer {
     try {
       return syncFactory
           .forCommit(event.subjectId())
+          .filter(
+              sync -> {
+                // The Settings toggle ("create a calendar event when I lock my week") gates the
+                // side-effect. A deliberate opt-out is a clean handle — the dedup mark stays, so
+                // the event is NOT redelivered.
+                boolean enabled = outlook.createEventOnLockEnabled(sync.memberId());
+                if (!enabled) {
+                  log.debug(
+                      "calendar sync skipped for commit {} — createEventOnLock disabled",
+                      event.subjectId());
+                }
+                return enabled;
+              })
           .map(
               sync -> {
                 String eventId = calendar.syncLockedCommit(sync);
+                // Persist the result: event id onto the commit's items, lastSyncAt onto the
+                // preference (the Settings "last synced").
+                outlook.recordLockSync(sync.memberId(), sync.commitId(), eventId, Instant.now());
                 log.info("synced commit {} to calendar event {}", event.subjectId(), eventId);
                 return eventId;
               });

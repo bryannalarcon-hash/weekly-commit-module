@@ -122,13 +122,16 @@ class SnsSqsEventingIT {
   @Autowired private MemberRepository members;
   @Autowired private WeeklyCommitRepository commits;
   @Autowired private CommitItemRepository items;
+  @Autowired private OutlookPreferenceRepository preferences;
 
   private UUID createdMemberId;
   private UUID createdCommitId;
 
   // This IT is NOT @Transactional (the SNS->SQS->poll path crosses transactions), so it must clean
   // up the rows it commits — otherwise the count-sensitive DemoSeederIT (which asserts exactly 14
-  // members) sees the leftover member. Delete children-first to respect FKs.
+  // members) sees the leftover member. Delete children-first to respect FKs (the successful sync
+  // also lazily creates the member's outlook_preference row via recordLockSync — remove it before
+  // the member, or its FK blocks the delete).
   @org.junit.jupiter.api.AfterEach
   void cleanup() {
     if (createdCommitId != null) {
@@ -136,6 +139,7 @@ class SnsSqsEventingIT {
       commits.deleteById(createdCommitId);
     }
     if (createdMemberId != null) {
+      preferences.findByMemberId(createdMemberId).ifPresent(preferences::delete);
       members.deleteById(createdMemberId);
     }
   }
