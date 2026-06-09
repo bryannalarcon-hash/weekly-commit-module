@@ -2,7 +2,8 @@
 // SecurityFilterChain is ALWAYS active: it permits the health/openapi probes AND the browser-borne
 // Graph consent callback (which carries no bearer token and is guarded by a signed `state`
 // instead),
-// gates manager-only routes (rollup, review, reconcile transitions) behind SCOPE_reconcile:commits,
+// gates manager-only routes (rollup, review, reconcile transitions, the CB-1 Outlook schedule)
+// behind SCOPE_reconcile:commits,
 // gates the admin RCDO edit-tree mutations (POST/PUT/DELETE /api/admin/rcdo/**) behind the
 // SCOPE_admin:rcdo authority (Auth0 "admin:rcdo" permission),
 // and requires a valid JWT everywhere else; bearer auth failures render as 401/403 with an RFC-7807
@@ -79,6 +80,9 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconcile")
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconciled")
+                    .hasAuthority(MANAGER_SCOPE)
+                    // CB-1: a manager schedules an ad-hoc Outlook event with one of their reports.
+                    .requestMatchers(HttpMethod.POST, "/api/integration/outlook/schedule")
                     .hasAuthority(MANAGER_SCOPE)
                     // Admin-only: every RCDO edit-tree mutation (create/update/delete at any
                     // level).

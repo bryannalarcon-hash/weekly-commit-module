@@ -5,7 +5,8 @@
 // "lena@solovis.test",
 // or by slug, e.g. "lena"). The resolved member's id becomes the auth principal (read back by
 // DebugHeaderCurrentMemberProvider), and MANAGER members are granted SCOPE_reconcile:commits so the
-// SAME manager-only route guards (rollup / review / reconcile transitions) apply as in prod.
+// SAME manager-only route guards (rollup / review / reconcile transitions / the CB-1 Outlook
+// schedule) apply as in prod.
 // Additionally, the TOP-LEVEL member (managerId == null, the org-root exec) is granted
 // SCOPE_admin:rcdo so the hermetic E2E/demo can drive the Strategy "Edit tree" as that admin; line
 // managers and ICs do NOT get it, so admin RCDO mutations still 403 for them — mirroring the prod
@@ -81,6 +82,9 @@ public class E2eSecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconcile")
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconciled")
+                    .hasAuthority(MANAGER_SCOPE)
+                    // CB-1: same manager-only Outlook schedule gate as the prod chain.
+                    .requestMatchers(HttpMethod.POST, "/api/integration/outlook/schedule")
                     .hasAuthority(MANAGER_SCOPE)
                     // Same admin-only RCDO edit-tree gate as the prod chain (top-level exec only).
                     .requestMatchers(HttpMethod.POST, "/api/admin/rcdo/**")

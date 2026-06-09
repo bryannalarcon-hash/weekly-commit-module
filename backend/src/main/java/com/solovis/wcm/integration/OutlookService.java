@@ -8,20 +8,29 @@
 // prefs.
 // Also the SYSTEM-side preference seam for the commit.locked calendar consumer (no acting member):
 // createEventOnLockEnabled(memberId) gates the sync, recordLockSync(...) persists the Graph event
-// id onto the commit's items + stamps lastSyncAt.
+// id onto the commit's items + stamps lastSyncAt. CB-1: schedule(...) lets the acting MANAGER
+// create an ad-hoc Outlook event with one of their reports (row-level authz + connected
+// precondition, then CalendarSyncPort.scheduleEvent).
 package com.solovis.wcm.integration;
 
 import com.solovis.wcm.commit.CommitItem;
 import com.solovis.wcm.commit.CommitItemRepository;
 import com.solovis.wcm.common.CurrentMemberProvider;
+import com.solovis.wcm.common.ForbiddenException;
+import com.solovis.wcm.common.IllegalCommitStateException;
+import com.solovis.wcm.common.ResourceNotFoundException;
 import com.solovis.wcm.integration.dto.OutlookConnectResponse;
 import com.solovis.wcm.integration.dto.OutlookConnectionDto;
 import com.solovis.wcm.integration.dto.OutlookSettingsRequest;
+import com.solovis.wcm.integration.dto.ScheduleEventRequest;
+import com.solovis.wcm.integration.dto.ScheduleEventResponse;
 import com.solovis.wcm.member.Member;
+import com.solovis.wcm.member.MemberRepository;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +45,8 @@ public class OutlookService {
   private final GraphConsentState consentState;
   private final CurrentMemberProvider currentMember;
   private final CommitItemRepository commitItems;
+  private final MemberRepository members;
+  private final CalendarSyncPort calendarSync;
 
   public OutlookService(
       GraphTokenService tokenService,
@@ -44,7 +55,9 @@ public class OutlookService {
       GraphProperties props,
       GraphConsentState consentState,
       CurrentMemberProvider currentMember,
-      CommitItemRepository commitItems) {
+      CommitItemRepository commitItems,
+      MemberRepository members,
+      CalendarSyncPort calendarSync) {
     this.tokenService = tokenService;
     this.tokens = tokens;
     this.preferences = preferences;
@@ -52,6 +65,8 @@ public class OutlookService {
     this.consentState = consentState;
     this.currentMember = currentMember;
     this.commitItems = commitItems;
+    this.members = members;
+    this.calendarSync = calendarSync;
   }
 
   /**
@@ -139,6 +154,46 @@ public class OutlookService {
     pref.setCreateEventOnLock(Boolean.TRUE.equals(request.createEventOnLock()));
     preferences.save(pref);
     return toDto(member);
+  }
+
+  /**
+   * POST /integration/outlook/schedule (CB-1) — the acting MANAGER schedules an ad-hoc Outlook
+   * event (e.g. a 1:1) with one of their OWN reports. Row-level authz: the acting member must BE
+   * the report's manager (403 otherwise; unknown report 404). Precondition: the manager has Outlook
+   * connected (409 illegal_state otherwise). Defaults: blank subject -> "1:1 — <report>", null
+   * duration -> 30 minutes. Deliberately NOT @Transactional: only short repository reads happen
+   * here, and the port call is an outbound Graph HTTP request a DB transaction should not span.
+   */
+  public ScheduleEventResponse schedule(ScheduleEventRequest request) {
+    Member acting = currentMember.currentMember();
+    Member report =
+        members
+            .findById(request.reportMemberId())
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "member " + request.reportMemberId() + " not found"));
+    if (!Objects.equals(acting.getId(), report.getManagerId())) {
+      throw new ForbiddenException("only the report's manager can schedule an event with them");
+    }
+    if (!tokenService.isConnected(acting.getId())) {
+      throw new IllegalCommitStateException("connect Outlook before scheduling");
+    }
+    String subject =
+        request.subject() == null || request.subject().isBlank()
+            ? "1:1 — " + report.getDisplayName()
+            : request.subject();
+    int durationMinutes = request.durationMinutes() == null ? 30 : request.durationMinutes();
+    ScheduledEventCommand cmd =
+        new ScheduledEventCommand(
+            acting.getId(),
+            report.getDisplayName(),
+            report.getEmail(),
+            subject,
+            request.startDateTime(),
+            durationMinutes,
+            request.note());
+    return new ScheduleEventResponse(calendarSync.scheduleEvent(cmd));
   }
 
   private OutlookConnectionDto toDto(Member member) {

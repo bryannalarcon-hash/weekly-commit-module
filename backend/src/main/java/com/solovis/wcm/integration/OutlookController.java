@@ -1,13 +1,16 @@
-// OutlookController — REST surface for the Outlook settings/connection screen (U22), RTK-Query
-// friendly. GET /api/integration/outlook returns the acting member's connection + preference state;
-// POST /connect returns the Entra authorize URL; DELETE disconnects; PUT /settings upserts the
-// create-event-on-lock preference. Acting member from CurrentMemberProvider; logic in
-// OutlookService.
+// OutlookController — REST surface for the Outlook settings/connection screen (U22) + the CB-1
+// manager scheduling action, RTK-Query friendly. GET /api/integration/outlook returns the acting
+// member's connection + preference state; POST /connect returns the Entra authorize URL; DELETE
+// disconnects; PUT /settings upserts the create-event-on-lock preference; POST /schedule
+// (route-gated MANAGER_SCOPE) creates an ad-hoc Outlook event with one of the manager's reports.
+// Acting member from CurrentMemberProvider; logic in OutlookService.
 package com.solovis.wcm.integration;
 
 import com.solovis.wcm.integration.dto.OutlookConnectResponse;
 import com.solovis.wcm.integration.dto.OutlookConnectionDto;
 import com.solovis.wcm.integration.dto.OutlookSettingsRequest;
+import com.solovis.wcm.integration.dto.ScheduleEventRequest;
+import com.solovis.wcm.integration.dto.ScheduleEventResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -50,5 +53,11 @@ public class OutlookController {
   @PutMapping("/settings")
   public OutlookConnectionDto updateSettings(@Valid @RequestBody OutlookSettingsRequest request) {
     return service.updateSettings(request);
+  }
+
+  @Operation(summary = "Schedule an ad-hoc Outlook event with one of the manager's reports (CB-1)")
+  @PostMapping("/schedule")
+  public ScheduleEventResponse schedule(@Valid @RequestBody ScheduleEventRequest request) {
+    return service.schedule(request);
   }
 }

@@ -1,10 +1,9 @@
-// CalendarSyncPort — the outbound port for surfacing a LOCKED weekly commit as an Outlook calendar
-// event (U16 / KTD7). Implementations: StubCalendarAdapter (in-memory, the test/default profile)
-// and
-// GraphCalendarAdapter (real delegated Microsoft Graph POST /me/events). Called asynchronously by
-// the
-// commit.locked consumer, never on the LOCK request path. Returns the created event's id (stored on
-// the commit) and MUST be idempotent per commitId so a redelivered event does not double-book.
+// CalendarSyncPort — the outbound port for Outlook calendar writes (U16 / KTD7 / CB-1).
+// Implementations: StubCalendarAdapter (in-memory, the test/default profile) and
+// GraphCalendarAdapter (real delegated Microsoft Graph POST /me/events). syncLockedCommit surfaces
+// a LOCKED weekly commit as an event (called asynchronously by the commit.locked consumer, never on
+// the LOCK request path; idempotent per commitId). scheduleEvent creates an ad-hoc manager-driven
+// event (CB-1 "Schedule from the manager surface") with the organizer's delegated token.
 package com.solovis.wcm.integration;
 
 public interface CalendarSyncPort {
@@ -15,4 +14,11 @@ public interface CalendarSyncPort {
    * commit yield the same event id (idempotent — Graph via a stable transactionId).
    */
   String syncLockedCommit(LockedCommitSync commit);
+
+  /**
+   * Create an ad-hoc Outlook event ON BEHALF of the organizer (CB-1): the acting manager's
+   * delegated token creates the event with the report as a required attendee. Returns the created
+   * event's id.
+   */
+  String scheduleEvent(ScheduledEventCommand cmd);
 }
