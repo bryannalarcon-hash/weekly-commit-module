@@ -5,8 +5,10 @@
 // diff,
 // and carries their incomplete items into next week (loadOwned). The diff joins the frozen snapshot
 // (planned) to live CommitItem.status (actual) on commitItemId, flagging completed/incomplete/
-// carried and ADDED_AFTER_LOCK (a live item with no plan line). Reconciled forces the ManagerReview
-// REVIEWED and publishes review.completed (U26).
+// carried and ADDED_AFTER_LOCK (a live item with no plan line). Pre-LOCK (no snapshot) the diff is
+// not applicable — it returns an empty view rather than flagging in-progress draft items as
+// ADDED_AFTER_LOCK. Reconciled forces the ManagerReview REVIEWED and publishes review.completed
+// (U26).
 package com.solovis.wcm.commit;
 
 import com.solovis.wcm.commit.dto.CommitDto;
@@ -141,6 +143,16 @@ public class ReconciliationService {
   @Transactional(readOnly = true)
   public ReconciliationView reconciliation(UUID commitId) {
     WeeklyCommit commit = loadOwned(commitId);
+
+    // No snapshot exists until LOCK. For a pre-LOCK commit (DRAFT) the live items ARE the
+    // plan-in-progress, not post-lock additions — joining them against an empty snapshot would
+    // wrongly flag every one ADDED_AFTER_LOCK and present a meaningless diff. Serve an empty,
+    // not-applicable view instead (still echoing the lifecycle state so the FE's not-yet-locked
+    // path can redirect). The diff only makes sense once a frozen plan exists.
+    if (snapshots.findByWeeklyCommitId(commitId).isEmpty()) {
+      return new ReconciliationView(commitId, commit.getLifecycleState(), List.of());
+    }
+
     List<CommitItem> liveItems = items.findByWeeklyCommitId(commitId);
     List<SnapshotItem> planned =
         snapshots

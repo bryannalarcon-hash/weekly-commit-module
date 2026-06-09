@@ -63,6 +63,17 @@ public class ApiExceptionHandler {
   }
 
   /**
+   * An operation with a lifecycle-state precondition was attempted in the wrong state — e.g.
+   * reviewing a never-submitted DRAFT that has no frozen plan. Renders 409 with the stable {@code
+   * illegal_state} code. Distinct from {@code illegal_transition}, which guards FSM moves; this
+   * guards a non-transition operation that still requires the commit be LOCKED or later.
+   */
+  @ExceptionHandler(IllegalCommitStateException.class)
+  public ProblemDetail onIllegalCommitState(IllegalCommitStateException ex) {
+    return problem(HttpStatus.CONFLICT, "Conflict", "illegal_state", ex.getMessage());
+  }
+
+  /**
    * Backstop for any persistence constraint collision (unique/FK/not-null) — e.g. two commits for
    * the same member+week. Renders 409 with a stable code instead of letting Spring surface a raw
    * 500; the detail is generic (no SQL leaked) so internals stay private.

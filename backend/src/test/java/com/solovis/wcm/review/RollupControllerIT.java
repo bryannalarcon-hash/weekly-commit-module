@@ -211,4 +211,24 @@ class RollupControllerIT extends AbstractWebIT {
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("forbidden"));
   }
+
+  @Test
+  void reviewOnNeverSubmittedDraftIsConflict() throws Exception {
+    // A DRAFT was never submitted, so there is no frozen plan to review — a review write here
+    // would yield the contradictory "DRAFT + REVIEWED" review-queue row. The lifecycle guard must
+    // reject it with a 409 illegal_state (problem+json), even though the acting manager is the
+    // owner's manager (so it is NOT a 403/authorization failure — it is a state failure).
+    Member mgr = manager("draftMgr");
+    Member rep = report("draftRep", mgr);
+    WeeklyCommit wc = commitFor(rep, LocalDate.parse("2026-06-08"), LifecycleState.DRAFT);
+
+    mockMvc
+        .perform(
+            post("/api/commits/{id}/review", wc.getId())
+                .with(as(mgr))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"state\":\"REVIEWED\",\"comment\":\"too soon\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("illegal_state"));
+  }
 }

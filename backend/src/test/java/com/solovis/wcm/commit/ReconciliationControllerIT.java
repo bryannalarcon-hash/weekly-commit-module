@@ -259,6 +259,41 @@ class ReconciliationControllerIT extends AbstractWebIT {
   }
 
   @Test
+  void reconciliationOnDraftReturnsEmptyNotApplicableViewWithNoAddedAfterLockFlags()
+      throws Exception {
+    // A DRAFT was never LOCKED, so there is NO frozen snapshot. The previous behavior joined the
+    // (empty) snapshot to the live items and flagged every live DRAFT item ADDED_AFTER_LOCK — a
+    // nonsensical diff. The guard must instead serve an empty/not-applicable view (the live items
+    // are the plan-in-progress, not post-lock additions), still echoing the DRAFT lifecycle state
+    // so the FE's not-yet-locked path can redirect.
+    Member owner = employee("draft-recon-owner", managerMember("mgr").getId());
+    String body =
+        """
+        {"weekStart":"2026-06-08","items":[{"text":"in-progress draft task","supportingOutcomeId":"%s","chessTier":"KING"}]}
+        """
+            .formatted(seedSupportingOutcome());
+    var created =
+        mockMvc
+            .perform(
+                post("/api/commits")
+                    .with(asOwner(owner))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body))
+            .andExpect(status().isCreated())
+            .andReturn();
+    UUID id =
+        UUID.fromString(
+            objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+
+    mockMvc
+        .perform(get("/api/commits/{id}/reconciliation", id).with(asOwner(owner)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.lifecycleState").value("DRAFT"))
+        // No diff rows at all — pre-lock items are NEVER flagged ADDED_AFTER_LOCK.
+        .andExpect(jsonPath("$.rows.length()").value(0));
+  }
+
+  @Test
   void carryForwardCopiesIncompleteIntoNextWeekDraft() throws Exception {
     Member manager = managerMember("mgr");
     Member owner = employee("carry-owner", manager.getId());
