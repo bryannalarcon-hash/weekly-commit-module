@@ -15,6 +15,13 @@ RUN cd apps/wc-remote && \
 # Host: records the remote's runtime entry URL (same-origin /remote/remoteEntry.js) and the API base.
 RUN cd apps/host-shell && \
     VITE_E2E=true VITE_API_BASE=/api VITE_REMOTE_ENTRY=/remote/remoteEntry.js npx vite build
+# Link the federated remote's stylesheet(s) into the host page: Module Federation loads the remote's
+# JS but not its CSS, so without this the whole design system (OKLCH tokens, IBM Plex, .panel/.btn,
+# Tailwind utilities) never reaches the host document and the app renders unstyled. cssCodeSplit:false
+# (remote vite.config) keeps this to a single file.
+RUN LINKS=$(cd apps/wc-remote/dist && for f in assets/*.css; do printf '<link rel="stylesheet" href="/remote/%s">' "$f"; done) && \
+    sed -i "s#</head>#${LINKS}</head>#" apps/host-shell/dist/index.html && \
+    echo "injected into host index.html: ${LINKS}"
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/apps/host-shell/dist /usr/share/nginx/html

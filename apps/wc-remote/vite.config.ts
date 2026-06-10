@@ -67,6 +67,11 @@ export default defineConfig({
     // Module Federation in Vite 5 requires a modern target.
     target: 'esnext',
     minify: false,
+    // Emit ALL styles into ONE css file. A federated remote's CSS is NOT auto-injected into the host
+    // document (the host loads remoteEntry's JS, not its CSS), so the deploy build links the remote's
+    // stylesheet from the host's index.html — which only works reliably when it's a single, non-split
+    // file (otherwise lazy-route chunk CSS would silently go unloaded). See deploy/Dockerfile.frontend.
+    cssCodeSplit: false,
   },
   server: {
     port: 4201,
