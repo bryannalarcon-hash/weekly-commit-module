@@ -56,7 +56,25 @@ class SettingsControllerIT extends AbstractWebIT {
         .andExpect(jsonPath("$.email").value(m.getEmail()))
         .andExpect(jsonPath("$.displayName").value("acctRead"))
         .andExpect(jsonPath("$.timezone").value("America/New_York"))
-        .andExpect(jsonPath("$.canReview").value(true));
+        .andExpect(jsonPath("$.canReview").value(true))
+        // A plain manager token carries reconcile:commits but NOT admin:rcdo -> canEditRcdo false.
+        .andExpect(jsonPath("$.canEditRcdo").value(false));
+  }
+
+  @Test
+  void getAccountReportsCanEditRcdoForTheAdminScope() throws Exception {
+    // The FE gates RCDO edit mode on canEditRcdo, which is true exactly when the acting request
+    // carries the admin:rcdo scope (SCOPE_admin:rcdo) — independent of MANAGER/EMPLOYEE role.
+    Member m = member("acctAdmin", MemberRole.EMPLOYEE, "America/New_York");
+    RequestPostProcessor asAdmin =
+        TestJwtConfig.bearer(TestJwtConfig.mint(m.getAuth0Subject(), m.getEmail(), "admin:rcdo"));
+
+    mockMvc
+        .perform(get("/api/settings/account").with(asAdmin))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.canEditRcdo").value(true))
+        // admin:rcdo is not the manager scope, so canReview is still role-derived (false here).
+        .andExpect(jsonPath("$.canReview").value(false));
   }
 
   @Test

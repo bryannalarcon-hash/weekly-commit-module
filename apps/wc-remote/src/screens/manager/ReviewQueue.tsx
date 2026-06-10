@@ -2,9 +2,11 @@
 // re-skinned to the WCM design handoff (prototype/wcm/page-mgr-queue.jsx + screenshots/desktop/
 // 06-mgr-review-queue.png). Lists the manager's direct reports for a selected week (WeekSelector +
 // week-stepper → review-queue query) as a single panel of rows — Avatar, name, last-reviewed line,
-// done/total count, alignment slot, and a submission badge (Submitted / Draft / Overdue / Reviewed).
+// done/total count, alignment slot, and a submission badge (Ready / Submitted / Draft / Overdue /
+// Reviewed). A row is REVIEWABLE only once the IC has RECONCILED it (the backend 409s an earlier
+// review) — RECONCILED-unreviewed rows read as "Ready to review" and drive the Needs-review count.
 // A filter-chip bar (All / Needs review / Submitted / Draft / Overdue) with live counts narrows the
-// view client-side; Submitted/Reviewed rows open the review detail (onOpenReview). Loading shimmer,
+// view client-side; reconciled (reviewable) rows open the review detail (onOpenReview). Loading shimmer,
 // the "All caught up" empty state, and the retryable error use the shared @wcm/ui primitives. Data is
 // RTK Query ONLY (useGetReviewQueueQuery, unchanged). Preserves the manager-queue testids the Cypress
 // suite depends on (review-queue, queue-list, queue-row, queue-open-review, queue-overdue,
@@ -21,32 +23,38 @@ export interface ReviewQueueProps {
   onOpenReview: (commitId: string, weekStart: string) => void;
 }
 
-/** The design's submission-status vocabulary for a queue row (distinct from the lifecycle badge). */
-type SubmissionStatus = 'submitted' | 'draft' | 'overdue' | 'reviewed';
+/** The design's submission-status vocabulary for a queue row (distinct from the lifecycle badge).
+ *  'ready' = RECONCILED-but-unreviewed: the IC has reconciled, so the manager can now review it. */
+type SubmissionStatus = 'submitted' | 'draft' | 'overdue' | 'reviewed' | 'ready';
 
 /** Filter chip ids — `all` plus one per submission status (mirrors the design chip bar). */
 type FilterId = 'all' | 'needs' | SubmissionStatus;
 
 /**
  * Collapse a row's lifecycle/review/overdue truth into the design's single submission status.
- * Reviewed wins (terminal), then a still-unsubmitted overdue report, then a locked submission,
- * else it is a draft (covers DRAFT and the not-started/null lifecycle the API can return).
+ * Reviewed wins (terminal); then a RECONCILED-but-unreviewed week is 'ready' (the IC has reconciled,
+ * so the manager can now act); then a still-pre-reconciliation overdue report; then a submission still
+ * awaiting reconciliation (LOCKED or RECONCILING) is 'submitted'; else it is a draft (covers DRAFT and
+ * the not-started/null lifecycle the API can return).
  */
 function submissionOf(r: ReviewQueueRow): SubmissionStatus {
   if (r.reviewState === 'REVIEWED') return 'reviewed';
-  if (r.overdue && r.lifecycleState !== 'LOCKED') return 'overdue';
-  if (r.lifecycleState === 'LOCKED') return 'submitted';
+  if (r.lifecycleState === 'RECONCILED') return 'ready';
+  // Overdue only reads as overdue while still pre-reconciliation AND not yet submitted; once the
+  // report is LOCKED/RECONCILING it is "submitted — awaiting reconciliation" instead.
+  if (r.overdue && r.lifecycleState !== 'LOCKED' && r.lifecycleState !== 'RECONCILING') return 'overdue';
+  if (r.lifecycleState === 'LOCKED' || r.lifecycleState === 'RECONCILING') return 'submitted';
   return 'draft';
 }
 
-/** A row is reviewable when the report has actually locked a commit for the week (Submitted/Reviewed). */
+/** A row is reviewable only once the IC has RECONCILED the week (the backend 409s a pre-reconcile review). */
 function canReviewRow(r: ReviewQueueRow): boolean {
-  return Boolean(r.commitId) && r.lifecycleState === 'LOCKED';
+  return Boolean(r.commitId) && r.lifecycleState === 'RECONCILED';
 }
 
-/** A row "needs review" when it is a locked submission still awaiting the manager's verdict. */
+/** A row "needs review" when it is RECONCILED and still awaiting the manager's verdict. */
 function needsReview(r: ReviewQueueRow): boolean {
-  return r.lifecycleState === 'LOCKED' && r.reviewState !== 'REVIEWED';
+  return r.lifecycleState === 'RECONCILED' && r.reviewState !== 'REVIEWED';
 }
 
 /**
@@ -64,7 +72,8 @@ function progressLabel(r: ReviewQueueRow): string {
 }
 
 const SUB_VISUAL: Record<SubmissionStatus, { label: string; color: string; dim: string; icon: string }> = {
-  submitted: { label: 'Submitted', color: 'var(--cyan)', dim: 'var(--cyan-dim)', icon: 'lock' },
+  ready: { label: 'Ready to review', color: 'var(--signal)', dim: 'var(--signal-dim)', icon: 'checkCircle' },
+  submitted: { label: 'Submitted — awaiting reconciliation', color: 'var(--cyan)', dim: 'var(--cyan-dim)', icon: 'lock' },
   draft: { label: 'Draft', color: 'var(--slate)', dim: 'var(--slate-dim)', icon: 'pencil' },
   overdue: { label: 'Overdue', color: 'var(--red)', dim: 'var(--red-dim)', icon: 'alert' },
   reviewed: { label: 'Reviewed', color: 'var(--signal)', dim: 'var(--signal-dim)', icon: 'checkCircle' },
@@ -108,7 +117,7 @@ export function ReviewQueue({ onOpenReview }: ReviewQueueProps): JSX.Element {
 
   // Live chip counts over the unfiltered set.
   const counts = useMemo(() => {
-    const c: Record<FilterId, number> = { all: all.length, needs: 0, submitted: 0, draft: 0, overdue: 0, reviewed: 0 };
+    const c: Record<FilterId, number> = { all: all.length, needs: 0, ready: 0, submitted: 0, draft: 0, overdue: 0, reviewed: 0 };
     for (const r of all) {
       if (needsReview(r)) c.needs += 1;
       c[submissionOf(r)] += 1;

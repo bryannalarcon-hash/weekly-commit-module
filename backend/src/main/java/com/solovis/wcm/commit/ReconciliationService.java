@@ -1,16 +1,15 @@
-// ReconciliationService — owns the reconcile half of the lifecycle (U13). The actor model splits by
-// transition (KTD6): the MANAGER who manages the commit's owner drives the LOCKED->RECONCILING and
-// RECONCILING->RECONCILED transitions (loadAsManager: canReview() && manages the owner), matching
-// ReviewService; the OWNER records actuals (status patches) and carries their incomplete items into
-// next week (loadOwned). The planned-vs-actual diff GET is readable by the OWNER OR the owner's
-// MANAGER (loadOwnerOrManager, mirroring CommitService.get — the manager drives the lifecycle and
-// already reads the raw commit/rollup, so they must also read the diff for their own report; a
-// manager reaches only their own reports). The diff joins the frozen snapshot
-// (planned) to live CommitItem.status (actual) on commitItemId, flagging completed/incomplete/
-// carried and ADDED_AFTER_LOCK (a live item with no plan line). Pre-LOCK (no snapshot) the diff is
-// not applicable — it returns an empty view rather than flagging in-progress draft items as
-// ADDED_AFTER_LOCK. Reconciled forces the ManagerReview REVIEWED and publishes review.completed
-// (U26).
+// ReconciliationService — owns the reconcile half of the lifecycle (U13). Per the assignment the IC
+// (OWNER) drives reconciliation end to end: they open it (LOCKED->RECONCILING), record actuals
+// (status patches), close it (RECONCILING->RECONCILED), and carry incomplete items into next week —
+// every write path is loadOwned (owner-only), so a manager attempting any of these gets 403. The
+// manager reviews the reconciled week SEPARATELY (ReviewService); reconciliation itself touches no
+// ManagerReview and publishes no review.completed. The planned-vs-actual diff GET stays readable by
+// the OWNER OR the owner's MANAGER (loadOwnerOrManager, mirroring CommitService.get — the manager
+// reads the diff to inform their review; a manager reaches only their own reports). The diff joins
+// the frozen snapshot (planned) to live CommitItem.status (actual) on commitItemId, flagging
+// completed/incomplete/carried and ADDED_AFTER_LOCK (a live item with no plan line). Pre-LOCK (no
+// snapshot) the diff is not applicable — it returns an empty view rather than flagging in-progress
+// draft items as ADDED_AFTER_LOCK.
 package com.solovis.wcm.commit;
 
 import com.solovis.wcm.commit.dto.CommitDto;
@@ -21,13 +20,8 @@ import com.solovis.wcm.commit.dto.ReconciliationView;
 import com.solovis.wcm.common.CurrentMemberProvider;
 import com.solovis.wcm.common.ForbiddenException;
 import com.solovis.wcm.common.ResourceNotFoundException;
-import com.solovis.wcm.event.DomainEvent;
-import com.solovis.wcm.event.EventPublisher;
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberRepository;
-import com.solovis.wcm.review.ManagerReview;
-import com.solovis.wcm.review.ManagerReviewRepository;
-import com.solovis.wcm.review.ReviewState;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -47,40 +41,35 @@ public class ReconciliationService {
   private final CommitItemRepository items;
   private final CommitSnapshotRepository snapshots;
   private final SnapshotItemRepository snapshotItems;
-  private final ManagerReviewRepository reviews;
   private final MemberRepository members;
   private final LifecycleService lifecycle;
   private final CurrentMemberProvider currentMember;
-  private final EventPublisher events;
 
   public ReconciliationService(
       WeeklyCommitRepository commits,
       CommitItemRepository items,
       CommitSnapshotRepository snapshots,
       SnapshotItemRepository snapshotItems,
-      ManagerReviewRepository reviews,
       MemberRepository members,
       LifecycleService lifecycle,
-      CurrentMemberProvider currentMember,
-      EventPublisher events) {
+      CurrentMemberProvider currentMember) {
     this.commits = commits;
     this.items = items;
     this.snapshots = snapshots;
     this.snapshotItems = snapshotItems;
-    this.reviews = reviews;
     this.members = members;
     this.lifecycle = lifecycle;
     this.currentMember = currentMember;
-    this.events = events;
   }
 
   /**
    * POST /commits/{id}/reconcile — LOCKED -> RECONCILING (opens the status-edit window). Driven by
-   * the owner's manager (loadAsManager), never the owner themselves.
+   * the OWNER (loadOwned), who reports their own planned-vs-actual; a manager attempting this gets
+   * 403.
    */
   @Transactional
   public CommitDto startReconciling(UUID commitId) {
-    WeeklyCommit commit = loadAsManager(commitId);
+    WeeklyCommit commit = loadOwned(commitId);
     lifecycle.startReconciling(commit);
     commits.save(commit);
     return CommitDto.from(commit, items.findByWeeklyCommitId(commitId));
@@ -108,33 +97,16 @@ public class ReconciliationService {
   }
 
   /**
-   * POST /commits/{id}/reconciled — RECONCILING -> RECONCILED. Driven by the owner's manager
-   * (loadAsManager): they (and only they) force the ManagerReview REVIEWED (creating one if
-   * absent), stamping the acting manager as reviewer, and publish review.completed (U26). An
-   * employee owner can never self-mark their own commit RECONCILED — the manages-the-owner check
-   * forbids it.
+   * POST /commits/{id}/reconciled — RECONCILING -> RECONCILED, driven by the OWNER (loadOwned); a
+   * manager attempting this gets 403. No review side-effect: the manager reviews the reconciled
+   * week separately (ReviewService), so this neither creates/touches a ManagerReview nor publishes
+   * review.completed.
    */
   @Transactional
   public CommitDto markReconciled(UUID commitId) {
-    Member manager = currentMember.currentMember();
-    WeeklyCommit commit = requireManagerOf(commitId, manager);
-    ManagerReview review =
-        reviews
-            .findByWeeklyCommitId(commitId)
-            .orElseGet(
-                () ->
-                    ManagerReview.builder()
-                        .weeklyCommitId(commitId)
-                        .reviewerId(manager.getId())
-                        .state(ReviewState.INCOMPLETE)
-                        .build());
-    review.setReviewerId(manager.getId());
-    commit.setReviewerId(manager.getId());
-    lifecycle.reconcile(commit, review, Instant.now());
+    WeeklyCommit commit = loadOwned(commitId);
+    lifecycle.reconcile(commit, Instant.now());
     commits.save(commit);
-    reviews.save(review);
-    events.publish(
-        DomainEvent.of(DomainEvent.REVIEW_COMPLETED, commit.getId(), commit.getMemberId()));
     return CommitDto.from(commit, items.findByWeeklyCommitId(commitId));
   }
 
@@ -295,32 +267,6 @@ public class ReconciliationService {
             .orElse(false);
     if (!isOwner && !isOwnersManager) {
       throw new ForbiddenException("commit " + commitId + " is not visible to the acting member");
-    }
-    return commit;
-  }
-
-  /**
-   * Load the commit, then 403 unless the acting member is a manager OF the commit's owner (KTD6).
-   */
-  private WeeklyCommit loadAsManager(UUID commitId) {
-    return requireManagerOf(commitId, currentMember.currentMember());
-  }
-
-  /**
-   * Load the commit, then 403 unless {@code manager} canReview() AND manages the commit's owner —
-   * the same row-level rule ReviewService enforces. An employee owner never satisfies this, so the
-   * RECONCILING<->RECONCILED transitions cannot be self-driven (no manager-review bypass).
-   */
-  private WeeklyCommit requireManagerOf(UUID commitId, Member manager) {
-    WeeklyCommit commit =
-        commits
-            .findById(commitId)
-            .orElseThrow(() -> new ResourceNotFoundException("commit " + commitId + " not found"));
-    UUID ownersManagerId =
-        members.findById(commit.getMemberId()).map(Member::getManagerId).orElse(null);
-    if (!manager.canReview() || !Objects.equals(manager.getId(), ownersManagerId)) {
-      throw new ForbiddenException(
-          "only the owner's manager may drive the reconcile transitions on commit " + commitId);
     }
     return commit;
   }

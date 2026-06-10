@@ -38,6 +38,7 @@ const account: MemberAccountDto = {
   displayName: 'Lindsley Alvaro',
   timezone: 'America/Chicago',
   canReview: true,
+  canEditRcdo: true,
 };
 const notifications: NotificationPreferenceDto = {
   emailOnLock: true,

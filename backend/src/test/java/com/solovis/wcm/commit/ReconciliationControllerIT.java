@@ -1,14 +1,11 @@
 // ReconciliationControllerIT — MockMvc tests for the reconcile half of the lifecycle (U13), full
 // stack against Testcontainers Postgres, AUTHENTICATED via locally minted RS256 tokens (U15). The
-// ACTOR MODEL is split (KTD6): a genuine MANAGER (carries reconcile:commits and manages the owner)
-// drives the scope-gated /reconcile and /reconciled transitions, while the EMPLOYEE OWNER (no
-// scope)
-// drafts/locks, records actual statuses, reads their own planned-vs-actual diff, and carries
-// forward.
+// IC (OWNER) drives reconciliation end to end: they /reconcile (open), patch item statuses,
+// /reconciled (close), read their own planned-vs-actual diff, and carry forward — all owner-only.
 // Proves: a status patch in RECONCILING -> 200 and persists; a status patch outside RECONCILING ->
 // 409; the GET /reconciliation diff flags an INCOMPLETE planned item and an ADDED_AFTER_LOCK item;
-// the manager-driven RECONCILING -> RECONCILED forces the ManagerReview REVIEWED; an employee owner
-// cannot self-drive /reconcile or /reconciled (403); a non-managing manager is also 403; the
+// the OWNER-driven RECONCILING -> RECONCILED touches NO ManagerReview (the manager reviews
+// separately); a MANAGER attempting /reconcile or /reconciled on a report gets 403; the
 // GET /reconciliation diff is readable by the OWNER and the owner's MANAGER but 403 for an
 // unrelated manager or a peer non-manager (Finding #4/#11); and carry-forward into an already-taken
 // next week is a clean 409, not a 500.
@@ -55,7 +52,7 @@ class ReconciliationControllerIT extends AbstractWebIT {
             .build());
   }
 
-  /** A MANAGER (canReview()) — the actor authorized to drive the reconcile transitions. */
+  /** A MANAGER (canReview()) — reads the report's diff and reviews it, but does NOT reconcile. */
   private Member managerMember(String slug) {
     return members.saveAndFlush(
         Member.builder()
@@ -73,7 +70,9 @@ class ReconciliationControllerIT extends AbstractWebIT {
     return TestJwtConfig.employee(m.getAuth0Subject(), m.getEmail());
   }
 
-  /** Manager token carrying reconcile:commits — drives the scope-gated reconcile transitions. */
+  /**
+   * Manager token carrying reconcile:commits — reads the diff; cannot drive the IC-owned reconcile.
+   */
   private RequestPostProcessor asManager(Member m) {
     return TestJwtConfig.manager(m.getAuth0Subject(), m.getEmail());
   }
@@ -128,10 +127,10 @@ class ReconciliationControllerIT extends AbstractWebIT {
     return items.findByWeeklyCommitId(commitId).get(0).getId();
   }
 
-  /** Move the commit to RECONCILING as the owner's manager (the only actor allowed to). */
-  private void startReconciling(UUID commitId, Member manager) throws Exception {
+  /** Move the commit to RECONCILING as the OWNER (the IC drives reconciliation). */
+  private void startReconciling(UUID commitId, Member owner) throws Exception {
     mockMvc
-        .perform(post("/api/commits/{id}/reconcile", commitId).with(asManager(manager)))
+        .perform(post("/api/commits/{id}/reconcile", commitId).with(asOwner(owner)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lifecycleState").value("RECONCILING"));
   }
@@ -161,7 +160,7 @@ class ReconciliationControllerIT extends AbstractWebIT {
     UUID id = createAndLock(owner);
     UUID itemId = plannedItemId(id);
 
-    startReconciling(id, manager);
+    startReconciling(id, owner);
 
     mockMvc
         .perform(
@@ -192,8 +191,8 @@ class ReconciliationControllerIT extends AbstractWebIT {
                     .build())
             .getId();
 
-    // Manager moves to RECONCILING; owner marks the planned item INCOMPLETE.
-    startReconciling(id, manager);
+    // Owner moves to RECONCILING and marks the planned item INCOMPLETE.
+    startReconciling(id, owner);
     mockMvc
         .perform(
             patch("/api/commits/{id}/items/{itemId}/status", id, plannedId)
@@ -217,10 +216,10 @@ class ReconciliationControllerIT extends AbstractWebIT {
 
   @Test
   void reconciliationDiffReadableByOwnerAndOwnersManager() throws Exception {
-    // Finding #4/#11: the owner's direct MANAGER drives the reconcile lifecycle and already reads
-    // the raw commit + rollup, so they must also be able to GET the planned-vs-actual diff for
-    // their
-    // own report. The OWNER reads it too. Both -> 200 with the diff rows present.
+    // Finding #4/#11: the owner's direct MANAGER reviews the reconciled week and already reads the
+    // raw commit + rollup, so they must also be able to GET the planned-vs-actual diff for their
+    // own report (to inform that review). The OWNER reads it too. Both -> 200 with the diff rows
+    // present.
     Member manager = managerMember("mgr");
     Member owner = employee("read-owner", manager.getId());
     UUID id = createAndLock(owner);
@@ -271,44 +270,67 @@ class ReconciliationControllerIT extends AbstractWebIT {
   }
 
   @Test
-  void reconciledTransitionForcesReviewReviewed() throws Exception {
+  void ownerDrivesFullReconcileFlowAndItCreatesNoReview() throws Exception {
+    // The IC owns reconciliation end to end: open it, record an actual, then close it — all as the
+    // owner. The RECONCILING -> RECONCILED transition touches NO ManagerReview (the manager reviews
+    // separately), so no review row exists and the commit's reviewer/reviewedAt stay unset.
     Member manager = managerMember("mgr");
     Member owner = employee("reconciled-owner", manager.getId());
     UUID id = createAndLock(owner);
+    UUID itemId = plannedItemId(id);
 
-    startReconciling(id, manager);
+    startReconciling(id, owner);
     mockMvc
-        .perform(post("/api/commits/{id}/reconciled", id).with(asManager(manager)))
+        .perform(
+            patch("/api/commits/{id}/items/{itemId}/status", id, itemId)
+                .with(asOwner(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"COMPLETE\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(post("/api/commits/{id}/reconciled", id).with(asOwner(owner)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lifecycleState").value("RECONCILED"));
 
-    var review = reviews.findByWeeklyCommitId(id).orElseThrow();
-    org.assertj.core.api.Assertions.assertThat(review.isReviewed()).isTrue();
-    // The acting manager is recorded as the reviewer (no self-review by the owner).
-    org.assertj.core.api.Assertions.assertThat(review.getReviewerId()).isEqualTo(manager.getId());
+    // No ManagerReview is created by reconciliation, and the commit is not stamped as reviewed.
+    org.assertj.core.api.Assertions.assertThat(reviews.findByWeeklyCommitId(id)).isEmpty();
+    WeeklyCommit reconciled = commits.findById(id).orElseThrow();
+    org.assertj.core.api.Assertions.assertThat(reconciled.getReviewedAt()).isNull();
+    org.assertj.core.api.Assertions.assertThat(reconciled.getReviewerId()).isNull();
   }
 
   @Test
-  void ownerCannotSelfDriveReconcileTransitions() throws Exception {
+  void ownersManagerCannotDriveReconcileTransitions() throws Exception {
+    // Reconciliation is OWNER-driven: even the owner's own manager (who reviews the week
+    // separately)
+    // is NOT the actor for /reconcile or /reconciled — the service's owner-only check (loadOwned)
+    // rejects them with 403.
     Member manager = managerMember("mgr");
-    Member owner = employee("self-owner", manager.getId());
+    Member owner = employee("mgr-blocked-owner", manager.getId());
     UUID id = createAndLock(owner);
 
-    // The owner (employee, no manager scope) is rejected at the security filter -> 403.
     mockMvc
-        .perform(post("/api/commits/{id}/reconcile", id).with(asOwner(owner)))
-        .andExpect(status().isForbidden());
+        .perform(post("/api/commits/{id}/reconcile", id).with(asManager(manager)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("forbidden"));
+
+    // Move it to RECONCILING as the owner, then the manager still cannot close it.
+    startReconciling(id, owner);
+    mockMvc
+        .perform(post("/api/commits/{id}/reconciled", id).with(asManager(manager)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("forbidden"));
   }
 
   @Test
-  void nonManagingManagerCannotDriveReconcile() throws Exception {
+  void unrelatedMemberCannotDriveReconcile() throws Exception {
+    // A non-owner who is neither the owner nor authorized clears the (authenticated-only) URL gate
+    // but fails the service's owner-only row check -> 403.
     Member manager = managerMember("mgr");
-    Member other = managerMember("other-mgr"); // has scope, but does NOT manage the owner
+    Member other = managerMember("other-mgr"); // not the owner, does not own this commit
     Member owner = employee("foreign-owner", manager.getId());
     UUID id = createAndLock(owner);
 
-    // A genuine manager who does not manage the owner clears the scope gate but fails the row
-    // check.
     mockMvc
         .perform(post("/api/commits/{id}/reconcile", id).with(asManager(other)))
         .andExpect(status().isForbidden())
@@ -357,7 +379,7 @@ class ReconciliationControllerIT extends AbstractWebIT {
     UUID id = createAndLock(owner);
     UUID plannedId = plannedItemId(id);
 
-    startReconciling(id, manager);
+    startReconciling(id, owner);
     mockMvc
         .perform(
             patch("/api/commits/{id}/items/{itemId}/status", id, plannedId)
@@ -366,7 +388,7 @@ class ReconciliationControllerIT extends AbstractWebIT {
                 .content("{\"status\":\"INCOMPLETE\"}"))
         .andExpect(status().isOk());
     mockMvc
-        .perform(post("/api/commits/{id}/reconciled", id).with(asManager(manager)))
+        .perform(post("/api/commits/{id}/reconciled", id).with(asOwner(owner)))
         .andExpect(status().isOk());
 
     var carried =

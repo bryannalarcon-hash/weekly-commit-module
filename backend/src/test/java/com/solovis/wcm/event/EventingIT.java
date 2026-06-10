@@ -1,9 +1,11 @@
 // EventingIT — proves the U26 event seam end-to-end through the web stack: the OWNER's LOCK
 // publishes
-// a commit.locked DomainEvent and the MANAGER-driven RECONCILING->RECONCILED publishes
-// review.completed, both delivered synchronously to an in-process @EventListener (the same path
-// LoggingEventConsumer uses). Exercises the split actor model (KTD6): owner locks, owner's manager
-// drives reconcile. A test RecordingConsumer captures every DomainEvent so we can assert the type
+// a commit.locked DomainEvent and the MANAGER's REVIEWED sign-off publishes review.completed, both
+// delivered synchronously to an in-process @EventListener (the same path LoggingEventConsumer
+// uses).
+// Exercises the actor model: the OWNER (IC) locks AND drives reconciliation (reconcile/reconciled);
+// the owner's MANAGER reviews the reconciled week separately and that REVIEWED write is what fires
+// review.completed. A test RecordingConsumer captures every DomainEvent so we can assert the type
 // slugs and subject ids fired on the real lifecycle transitions (not via a stub).
 package com.solovis.wcm.event;
 
@@ -108,12 +110,13 @@ class EventingIT extends AbstractWebIT {
   }
 
   @Test
-  void lockPublishesCommitLockedAndReconciledPublishesReviewCompleted() throws Exception {
+  void lockPublishesCommitLockedAndManagerReviewPublishesReviewCompleted() throws Exception {
     Member manager = managerMember("evt-mgr");
     Member m = owner("evt", manager.getId());
     WeeklyCommit wc = lockedCommit(m);
-    // Split actor model (KTD6): the OWNER (employee token, no scope) locks; the OWNER'S MANAGER
-    // (scope token, manages the owner) drives the scope-gated reconcile transitions.
+    // Actor model: the OWNER (employee token) locks AND drives reconciliation; the OWNER'S MANAGER
+    // (scope token, manages the owner) reviews the reconciled week, and that REVIEWED write fires
+    // review.completed.
     var asOwner = TestJwtConfig.employee(m.getAuth0Subject(), m.getEmail());
     var asManager = TestJwtConfig.manager(manager.getAuth0Subject(), manager.getEmail());
 
@@ -123,11 +126,22 @@ class EventingIT extends AbstractWebIT {
 
     assertThat(recorder.typesFor(wc.getId())).contains(DomainEvent.COMMIT_LOCKED);
 
+    // The IC reconciles their own week (open then close) — no review event yet.
     mockMvc
-        .perform(post("/api/commits/{id}/reconcile", wc.getId()).with(asManager))
+        .perform(post("/api/commits/{id}/reconcile", wc.getId()).with(asOwner))
         .andExpect(status().isOk());
     mockMvc
-        .perform(post("/api/commits/{id}/reconciled", wc.getId()).with(asManager))
+        .perform(post("/api/commits/{id}/reconciled", wc.getId()).with(asOwner))
+        .andExpect(status().isOk());
+    assertThat(recorder.typesFor(wc.getId())).doesNotContain(DomainEvent.REVIEW_COMPLETED);
+
+    // The manager then reviews the reconciled week as REVIEWED -> review.completed fires.
+    mockMvc
+        .perform(
+            post("/api/commits/{id}/review", wc.getId())
+                .with(asManager)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"state\":\"REVIEWED\",\"comment\":\"looks good\"}"))
         .andExpect(status().isOk());
 
     assertThat(recorder.typesFor(wc.getId()))

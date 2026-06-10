@@ -2,8 +2,11 @@
 // against Testcontainers Postgres, AUTHENTICATED via locally minted RS256 manager tokens (U15) that
 // carry the reconcile:commits permission required by these manager-only routes. Proves: roll-up
 // rows carry correct completion/carry-over/RCDO-alignment metrics; manager A canNOT see manager B's
-// reports (row-level authz, KTD6); Pageable page boundaries; and a review write succeeds for the
-// owner's manager but is 403 for an unrelated (but still scoped) manager.
+// reports (row-level authz, KTD6); Pageable page boundaries; a REVIEWED write on a RECONCILED
+// commit
+// succeeds for the owner's manager (stamping the commit reviewer/reviewedAt and the ManagerReview)
+// but is 403 for an unrelated (but still scoped) manager; and a review is rejected (409) before the
+// IC reconciles — a never-submitted DRAFT and a not-yet-reconciled LOCKED commit both 409.
 package com.solovis.wcm.review;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -39,6 +42,7 @@ class RollupControllerIT extends AbstractWebIT {
   @Autowired private WeeklyCommitRepository commits;
   @Autowired private CommitItemRepository items;
   @Autowired private RcdoRepository rcdo;
+  @Autowired private ManagerReviewRepository reviews;
 
   private Member manager(String slug) {
     return members.saveAndFlush(
@@ -184,24 +188,33 @@ class RollupControllerIT extends AbstractWebIT {
   }
 
   @Test
-  void reviewWriteSucceedsForOwnersManagerAndIsForbiddenForOthers() throws Exception {
+  void reviewedWriteOnReconciledStampsCommitAndIsForbiddenForOthers() throws Exception {
     Member mgr = manager("revMgr");
     Member other = manager("revOther");
     Member rep = report("revRep", mgr);
-    WeeklyCommit wc = commitFor(rep, LocalDate.parse("2026-06-08"), LifecycleState.RECONCILING);
+    // The IC has reconciled their week; the manager now reviews it (the separate, after-the-fact
+    // step).
+    WeeklyCommit wc = commitFor(rep, LocalDate.parse("2026-06-08"), LifecycleState.RECONCILED);
 
-    // The owner's manager may review.
+    // The owner's manager may review; a REVIEWED write stamps the commit and the ManagerReview.
     mockMvc
         .perform(
             post("/api/commits/{id}/review", wc.getId())
                 .with(as(mgr))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"state\":\"INCOMPLETE\",\"comment\":\"keep going\"}"))
+                .content("{\"state\":\"REVIEWED\",\"comment\":\"great work\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.reviewerId").value(mgr.getId().toString()))
-        .andExpect(jsonPath("$.state").value("INCOMPLETE"));
+        .andExpect(jsonPath("$.state").value("REVIEWED"));
 
-    // An unrelated manager may not.
+    // The ManagerReview is REVIEWED and the commit is stamped reviewer/reviewedAt by ReviewService.
+    var review = reviews.findByWeeklyCommitId(wc.getId()).orElseThrow();
+    org.assertj.core.api.Assertions.assertThat(review.getState()).isEqualTo(ReviewState.REVIEWED);
+    WeeklyCommit reviewed = commits.findById(wc.getId()).orElseThrow();
+    org.assertj.core.api.Assertions.assertThat(reviewed.getReviewerId()).isEqualTo(mgr.getId());
+    org.assertj.core.api.Assertions.assertThat(reviewed.getReviewedAt()).isNotNull();
+
+    // An unrelated manager may not (authz fails before the state check).
     mockMvc
         .perform(
             post("/api/commits/{id}/review", wc.getId())
@@ -214,9 +227,9 @@ class RollupControllerIT extends AbstractWebIT {
 
   @Test
   void reviewOnNeverSubmittedDraftIsConflict() throws Exception {
-    // A DRAFT was never submitted, so there is no frozen plan to review — a review write here
-    // would yield the contradictory "DRAFT + REVIEWED" review-queue row. The lifecycle guard must
-    // reject it with a 409 illegal_state (problem+json), even though the acting manager is the
+    // A DRAFT was never submitted/reconciled — there is no reconciled week to review. The lifecycle
+    // guard must reject with 409 illegal_state (problem+json), even though the acting manager is
+    // the
     // owner's manager (so it is NOT a 403/authorization failure — it is a state failure).
     Member mgr = manager("draftMgr");
     Member rep = report("draftRep", mgr);
@@ -228,6 +241,39 @@ class RollupControllerIT extends AbstractWebIT {
                 .with(as(mgr))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"state\":\"REVIEWED\",\"comment\":\"too soon\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("illegal_state"));
+  }
+
+  @Test
+  void managerCannotReviewBeforeTheIcReconciles() throws Exception {
+    // Regression: the manager reviews AFTER the IC reconciles. A LOCKED (submitted but not yet
+    // reconciled) commit is NOT reviewable — the manager's review there is premature and must 409
+    // illegal_state, not be silently accepted. Authz passes (the owner's manager), so this is a
+    // pure
+    // state failure.
+    Member mgr = manager("earlyMgr");
+    Member rep = report("earlyRep", mgr);
+    WeeklyCommit wc = commitFor(rep, LocalDate.parse("2026-06-08"), LifecycleState.LOCKED);
+
+    mockMvc
+        .perform(
+            post("/api/commits/{id}/review", wc.getId())
+                .with(as(mgr))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"state\":\"REVIEWED\",\"comment\":\"too early\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("illegal_state"));
+
+    // RECONCILING is likewise not yet reconciled by the owner -> also 409.
+    WeeklyCommit reconciling =
+        commitFor(rep, LocalDate.parse("2026-06-15"), LifecycleState.RECONCILING);
+    mockMvc
+        .perform(
+            post("/api/commits/{id}/review", reconciling.getId())
+                .with(as(mgr))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"state\":\"REVIEWED\"}"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("illegal_state"));
   }

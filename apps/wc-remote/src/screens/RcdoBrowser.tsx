@@ -3,8 +3,8 @@
 // LEFT pane = a Reddit-style threaded tree (rails colored by ancestor level via RCDO_LEVEL — violet
 // RallyCry / cyan DefiningObjective / amber Outcome / signal SupportingOutcome), expand/collapse + a
 // typeahead search. RIGHT pane = a detail panel (level pill, title, description, owner, window, the
-// "Ladders up to" ancestor chain). An "Edit tree" toggle (shown only to admins — gated best-effort on
-// the account's canReview flag, see ADMIN GATE note) flips the right pane into an inline editor and
+// "Ladders up to" ancestor chain). An "Edit tree" toggle (shown only to admins — gated on the
+// account's `canEditRcdo` capability, see ADMIN GATE note) flips the right pane into an inline editor and
 // surfaces "Add child" affordances; edits call the @wcm/api admin mutation hooks (create/update/delete
 // for every level), each of which invalidates the rcdo tree tag so getRcdoTree refetches. Data is RTK
 // Query ONLY (useGetRcdoTreeQuery + the admin mutations); loading/empty/error use the shared primitives.
@@ -333,11 +333,11 @@ function TreeRow({
 
 export function RcdoBrowser(): JSX.Element {
   const { data, isLoading, isError, refetch } = useGetRcdoTreeQuery();
-  // ADMIN GATE: there is no dedicated admin/role flag on the contract yet, so the Edit-tree affordance
-  // is gated best-effort on the account's server-derived `canReview` (manager) flag. When a real
-  // `canAdmin`/role lands this should switch to it. See the structured-result note.
+  // ADMIN GATE: the Edit-tree affordance is admin-only — gated on the account's dedicated
+  // `canEditRcdo` capability (server-derived SCOPE_admin:rcdo). A MANAGER has canReview=true but
+  // canEditRcdo=false, so this must NOT key off canReview (the admin mutations 403 for managers).
   const { data: account } = useGetAccountQuery();
-  const canAdmin = account?.canReview ?? false;
+  const canAdmin = account?.canEditRcdo ?? false;
 
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

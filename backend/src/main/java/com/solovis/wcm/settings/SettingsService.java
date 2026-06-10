@@ -6,6 +6,7 @@
 package com.solovis.wcm.settings;
 
 import com.solovis.wcm.common.CurrentMemberProvider;
+import com.solovis.wcm.common.SecurityConfig;
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberAccountService;
 import com.solovis.wcm.settings.dto.MemberAccountDto;
@@ -13,6 +14,8 @@ import com.solovis.wcm.settings.dto.NotificationPreferenceDto;
 import com.solovis.wcm.settings.dto.UpdateMemberAccountDto;
 import com.solovis.wcm.settings.dto.UpdateNotificationPreferenceDto;
 import java.util.UUID;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,7 +93,20 @@ public class SettingsService {
         member.getEmail(),
         member.getDisplayName(),
         member.getTimezone(),
-        member.canReview());
+        member.canReview(),
+        hasAdminRcdoScope());
+  }
+
+  /**
+   * True when the acting request carries the admin:rcdo scope (SCOPE_admin:rcdo) — the same
+   * authority that gates the RCDO edit-tree mutations. The FE uses this to show RCDO edit mode only
+   * to admins.
+   */
+  private static boolean hasAdminRcdoScope() {
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    return auth != null
+        && auth.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals(SecurityConfig.ADMIN_RCDO_SCOPE));
   }
 
   private static NotificationPreferenceDto toNotificationDto(NotificationPreference pref) {

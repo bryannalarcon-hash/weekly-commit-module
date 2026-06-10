@@ -387,8 +387,9 @@ public class DemoSeeder implements CommandLineRunner {
         null,
         ChessTier.BISHOP);
 
-    // Omar: RECONCILING prior week, planned-vs-actual gap (1 incomplete). Snapshot frozen at lock;
-    // review in progress (INCOMPLETE) by Omar's manager (Wei) — RECONCILED is not yet reached.
+    // Omar: RECONCILING prior week, planned-vs-actual gap (1 incomplete). Snapshot frozen at lock.
+    // The IC (Omar) is still reconciling, so there is NO ManagerReview yet — the manager reviews
+    // only AFTER reconciliation completes (RECONCILED). A RECONCILING commit carries no review.
     WeeklyCommit omar =
         commit(
             "commit:omar", deterministicId("member:omar"), priorWeek, LifecycleState.RECONCILING);
@@ -407,7 +408,6 @@ public class DemoSeeder implements CommandLineRunner {
         "so:so4.1.b",
         ChessTier.BISHOP);
     freezeSnapshot("snapshot:omar", omar, lockedAt);
-    inProgressReview("review:omar", omar, deterministicId("member:wei"));
 
     // Priya (manager, reports to Sofia): her OWN week is RECONCILED + reviewed by Sofia, so the
     // demo
@@ -518,8 +518,8 @@ public class DemoSeeder implements CommandLineRunner {
   }
 
   /**
-   * A REVIEWED ManagerReview (the RECONCILED invariant: a manager reviewed it), by {@code
-   * reviewer}.
+   * A REVIEWED ManagerReview (the manager reviewed the reconciled week), by {@code reviewer}. Only
+   * a RECONCILED commit carries one — the manager reviews AFTER the IC reconciles.
    */
   private void reviewedReview(
       String key, WeeklyCommit commit, UUID reviewerId, Instant reviewedAt) {
@@ -530,17 +530,6 @@ public class DemoSeeder implements CommandLineRunner {
             .reviewerId(reviewerId)
             .state(ReviewState.REVIEWED)
             .reviewedAt(reviewedAt)
-            .build());
-  }
-
-  /** An in-progress (INCOMPLETE) ManagerReview for a RECONCILING commit, by {@code reviewer}. */
-  private void inProgressReview(String key, WeeklyCommit commit, UUID reviewerId) {
-    reviews.saveAndFlush(
-        ManagerReview.builder()
-            .id(deterministicId(key))
-            .weeklyCommitId(commit.getId())
-            .reviewerId(reviewerId)
-            .state(ReviewState.INCOMPLETE)
             .build());
   }
 }

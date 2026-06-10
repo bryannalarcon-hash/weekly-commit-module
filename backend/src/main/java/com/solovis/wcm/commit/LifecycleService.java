@@ -1,18 +1,17 @@
 // LifecycleService — server-enforced weekly-commit FSM (KTD3/KTD4/KTD5), pure domain logic.
 // Owns the legal-transition guards and the side effects each transition implies: LOCK writes the
-// immutable snapshot (guard: every item linked); RECONCILED forces ManagerReview=REVIEWED; CARRY
-// FORWARD copies UNFINISHED items (OPEN or INCOMPLETE) into a fresh next-week DRAFT. No
+// immutable snapshot (guard: every item linked); RECONCILED is OWNER-driven and touches neither the
+// ManagerReview nor the commit's reviewedAt (the manager reviews separately, in ReviewService);
+// CARRY FORWARD copies UNFINISHED items (OPEN or INCOMPLETE) into a fresh next-week DRAFT. No
 // repositories
 // — callers persist the returned objects, keeping this exhaustively unit-testable without a
 // database.
 // Status-only item edits are legal ONLY while RECONCILING (KTD4); content edits only while DRAFT.
 package com.solovis.wcm.commit;
 
-import com.solovis.wcm.review.ManagerReview;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -69,15 +68,13 @@ public class LifecycleService {
   }
 
   /**
-   * RECONCILING -> RECONCILED. Invariant: marks the {@link ManagerReview} REVIEWED (RECONCILED =>
-   * REVIEWED) and stamps reviewedAt on both the review and the commit.
+   * RECONCILING -> RECONCILED, driven by the OWNER reporting planned-vs-actual. This transition no
+   * longer touches the {@link com.solovis.wcm.review.ManagerReview} or the commit's reviewedAt —
+   * the manager reviews the reconciled week separately (ReviewService), as its own step.
    */
-  public void reconcile(WeeklyCommit commit, ManagerReview review, Instant reviewedAt) {
+  public void reconcile(WeeklyCommit commit, Instant reconciledAt) {
     requireState(commit, LifecycleState.RECONCILING, LifecycleState.RECONCILED);
-    Objects.requireNonNull(review, "a ManagerReview is required to reconcile");
-    review.markReviewed(reviewedAt);
     commit.setLifecycleState(LifecycleState.RECONCILED);
-    commit.setReviewedAt(reviewedAt);
   }
 
   /**

@@ -5,7 +5,8 @@
 // swapped wholesale (jsdom's assign is non-configurable — same pattern as host.test.tsx) to assert
 // the full-reload navigation. Covers: hidden when not e2e (KTD13), current-persona rendering, menu
 // open with the acting persona checked, switching persists + navigates, current persona is a no-op
-// close, and Esc / outside-click closing.
+// close, Esc / outside-click closing, and the demo "Reset demo data" action (confirm → POST
+// /api/e2e/reset → hard-reload).
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -135,5 +136,45 @@ describe('PersonaPill', () => {
 
     expect(window.localStorage.getItem('wcm.e2e.signedOut')).toBe('true');
     expect(assign).toHaveBeenCalledWith('/');
+  });
+
+  it('Reset demo data confirms, POSTs /api/e2e/reset, then hard-reloads', async () => {
+    // The demo-reset loop: pill -> Reset demo data -> confirm -> re-seed POST -> reload to the seed.
+    window.localStorage.setItem('wcm.e2e.member', 'priya');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<PersonaPill />);
+
+    await user.click(screen.getByTestId('persona-pill'));
+    await user.click(screen.getByTestId('persona-reset'));
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/e2e/reset', { method: 'POST' });
+    // The reload runs in fetch().finally — wait for it to settle.
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
+
+    confirmSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('Reset demo data does nothing when the confirm is dismissed', async () => {
+    window.localStorage.setItem('wcm.e2e.member', 'priya');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    render(<PersonaPill />);
+
+    await user.click(screen.getByTestId('persona-pill'));
+    await user.click(screen.getByTestId('persona-reset'));
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 });

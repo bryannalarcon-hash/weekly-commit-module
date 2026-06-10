@@ -2,8 +2,9 @@
 // (brief §6.7, U21), updated for the WCM design re-skin. MSW-backed, real RTK Query. Covers: the row
 // list (Avatar + name + submission badge + done count) with the overdue marker, the filter-chip bar
 // with live counts (All / Needs review / Submitted / Draft / Overdue) narrowing the view, opening a
-// Submitted/locked report (callback) while a Draft row's open control is disabled, the week stepper /
-// selector driving the query, the "All caught up" empty state, and an error state.
+// RECONCILED (reviewable) report (callback) while LOCKED/Draft open controls are DISABLED (a review is
+// only allowed post-reconciliation — the backend 409s earlier), the 'ready' badge for a
+// RECONCILED-unreviewed row, the week stepper / selector driving the query, the empty state, and error.
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -32,8 +33,12 @@ function page(rows: ReviewQueueRow[]): Page<ReviewQueueRow> {
   return { content: rows, totalElements: rows.length, totalPages: 1, number: 0, size: 50 };
 }
 
+// Diego is RECONCILED-unreviewed → "Ready to review" + reviewable + counts in needs-review.
+// Sam is LOCKED (submitted, awaiting reconciliation) → NOT reviewable, NOT needs-review.
+// Priya is an overdue DRAFT.
 const rows: ReviewQueueRow[] = [
-  { memberId: 'a', memberName: 'Diego Alvarez', commitId: 'c-a', lifecycleState: 'LOCKED', overdue: false, itemCount: 4, completedCount: 2, reviewState: 'UNREVIEWED' },
+  { memberId: 'a', memberName: 'Diego Alvarez', commitId: 'c-a', lifecycleState: 'RECONCILED', overdue: false, itemCount: 4, completedCount: 2, reviewState: 'UNREVIEWED' },
+  { memberId: 's', memberName: 'Sam Locked', commitId: 'c-s', lifecycleState: 'LOCKED', overdue: false, itemCount: 3, completedCount: 0, reviewState: 'UNREVIEWED' },
   { memberId: 'b', memberName: 'Priya Natarajan', commitId: null, lifecycleState: 'DRAFT', overdue: true, itemCount: 1, completedCount: 0, reviewState: 'UNREVIEWED' },
 ];
 
@@ -43,18 +48,20 @@ describe('ReviewQueue', () => {
     render(withStore(<ReviewQueue onOpenReview={noop} />));
 
     const queueRows = await screen.findAllByTestId('queue-row');
-    expect(queueRows).toHaveLength(2);
+    expect(queueRows).toHaveLength(3);
     expect(screen.getByText('Diego Alvarez')).toBeInTheDocument();
 
-    // Diego is a locked submission; Priya is an overdue draft.
+    // Diego is RECONCILED-unreviewed → "Ready to review"; Sam is a LOCKED submission; Priya is overdue.
     const badges = screen.getAllByTestId('queue-status-badge');
-    expect(badges[0]).toHaveAttribute('data-status', 'submitted');
-    expect(badges[1]).toHaveAttribute('data-status', 'overdue');
+    expect(badges[0]).toHaveAttribute('data-status', 'ready');
+    expect(badges[1]).toHaveAttribute('data-status', 'submitted');
+    expect(badges[2]).toHaveAttribute('data-status', 'overdue');
+    expect(screen.getByText('Ready to review')).toBeInTheDocument();
     expect(screen.getByTestId('queue-overdue')).toBeInTheDocument();
 
-    // A LOCKED (submitted, not-yet-reconciled) week shows its PLANNED item count — not "0/N done".
-    // Completion only renders once the week is reconciled (see the dedicated test below).
-    expect(screen.getByText('4 items')).toBeInTheDocument();
+    // Diego (RECONCILED) shows completion; Sam (LOCKED, not-yet-reconciled) shows its PLANNED count.
+    expect(screen.getByText('2/4 done')).toBeInTheDocument();
+    expect(screen.getByText('3 items')).toBeInTheDocument();
   });
 
   it('shows "X/Y done" only for reconciled weeks, and the planned count otherwise', async () => {
@@ -76,15 +83,18 @@ describe('ReviewQueue', () => {
     render(withStore(<ReviewQueue onOpenReview={noop} />));
     await screen.findAllByTestId('queue-row');
 
-    expect(screen.getByTestId('queue-count-all')).toHaveTextContent('2');
-    // Diego (locked, unreviewed) needs review and is submitted; Priya is an overdue draft.
+    expect(screen.getByTestId('queue-count-all')).toHaveTextContent('3');
+    // Diego (RECONCILED, unreviewed) needs review; Sam is a LOCKED submission (NOT needs-review);
+    // Priya is an overdue draft.
     expect(screen.getByTestId('queue-count-needs')).toHaveTextContent('1');
     expect(screen.getByTestId('queue-count-submitted')).toHaveTextContent('1');
     expect(screen.getByTestId('queue-count-overdue')).toHaveTextContent('1');
     expect(screen.getByTestId('queue-count-draft')).toHaveTextContent('0');
   });
 
-  it('opens a Submitted report for review and disables open for a Draft', async () => {
+  it('opens a RECONCILED report for review; LOCKED and Draft open controls are disabled', async () => {
+    // A review is only allowed once the IC has RECONCILED (the backend 409s an earlier review), so a
+    // LOCKED submission is NOT yet reviewable — only the reconciled row's open control is enabled.
     server.use(http.get('*/review-queue', () => HttpResponse.json(page(rows))));
     const onOpen = vi.fn();
     const user = userEvent.setup();
@@ -92,8 +102,9 @@ describe('ReviewQueue', () => {
     await screen.findAllByTestId('queue-row');
 
     const buttons = screen.getAllByTestId('queue-open-review');
-    expect(buttons[0]).toBeEnabled(); // Diego is LOCKED (Submitted)
-    expect(buttons[1]).toBeDisabled(); // Priya is DRAFT
+    expect(buttons[0]).toBeEnabled(); // Diego is RECONCILED → reviewable
+    expect(buttons[1]).toBeDisabled(); // Sam is LOCKED (awaiting reconciliation) → not reviewable
+    expect(buttons[2]).toBeDisabled(); // Priya is DRAFT
     await user.click(buttons[0]!);
     expect(onOpen).toHaveBeenCalledWith('c-a', expect.any(String));
   });
@@ -105,9 +116,10 @@ describe('ReviewQueue', () => {
     await screen.findAllByTestId('queue-row');
 
     await user.click(screen.getByTestId('needs-review-filter'));
-    // Only the LOCKED, unreviewed report remains.
+    // Only the RECONCILED, unreviewed report remains — the LOCKED submission is NOT needs-review.
     await waitFor(() => expect(screen.getAllByTestId('queue-row')).toHaveLength(1));
     expect(screen.getByText('Diego Alvarez')).toBeInTheDocument();
+    expect(screen.queryByText('Sam Locked')).not.toBeInTheDocument();
   });
 
   it('applies a submission-status filter chip (Draft)', async () => {

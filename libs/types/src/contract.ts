@@ -275,6 +275,8 @@ export interface MemberAccountDto {
   timezone: string;
   /** Whether this member can review reports (manager access) — read-only, server-derived. */
   canReview: boolean;
+  /** Whether this member can edit the RCDO strategy tree (admin:rcdo scope) — gates FE edit mode. */
+  canEditRcdo: boolean;
 }
 
 /**

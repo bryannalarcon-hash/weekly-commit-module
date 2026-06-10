@@ -2,9 +2,10 @@
 // browser/editor (brief §6.5), MSW-backed (real RTK Query getRcdoTree + the admin RCDO mutations).
 // Proves: the threaded tree renders and selecting a node populates the right detail panel (level pill +
 // "Ladders up to" chain); the typeahead search narrows to an empty state on no match; a failed tree
-// query shows the error/retry primitive; the admin Edit-tree toggle (gated on the account's canReview
-// flag) flips the panel into the inline editor and "Add Rally Cry" creates a node the refetched tree
-// renders. resetMockDb keeps the mutable mock RCDO tree isolated between tests.
+// query shows the error/retry primitive; the admin Edit-tree toggle (gated on the account's
+// `canEditRcdo` capability — NOT canReview) flips the panel into the inline editor and "Add Rally Cry"
+// creates a node the refetched tree renders; a MANAGER (canReview:true, canEditRcdo:false) is denied
+// the toggle. resetMockDb keeps the mutable mock RCDO tree isolated between tests.
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -96,7 +97,7 @@ describe('RcdoBrowser (Strategy)', () => {
     render(withStore(<RcdoBrowser />));
     await screen.findByTestId('strategy-tree');
 
-    // The account mock has canReview: true → the admin Edit-tree affordance is visible.
+    // The default account mock has canEditRcdo: true → the admin Edit-tree affordance is visible.
     const toggle = await screen.findByTestId('strategy-edit-toggle');
     expect(toggle).toHaveTextContent(/Edit tree/i);
 
@@ -118,7 +119,7 @@ describe('RcdoBrowser (Strategy)', () => {
     expect(screen.getByTestId('rcdo-delete')).toBeInTheDocument();
   });
 
-  it('hides the Edit-tree toggle when the account cannot administer', async () => {
+  it('hides the Edit-tree toggle when the account cannot administer (IC: no canEditRcdo)', async () => {
     server.use(
       http.get('*/api/settings/account', () =>
         HttpResponse.json({
@@ -127,12 +128,35 @@ describe('RcdoBrowser (Strategy)', () => {
           displayName: 'IC User',
           timezone: 'America/Chicago',
           canReview: false,
+          canEditRcdo: false,
         }),
       ),
     );
     render(withStore(<RcdoBrowser />));
     await screen.findByTestId('strategy-tree');
     expect(screen.queryByTestId('strategy-edit-toggle')).not.toBeInTheDocument();
+  });
+
+  it('denies the Edit-tree toggle to a MANAGER (canReview:true but canEditRcdo:false)', async () => {
+    // Regression: a manager has canReview=true but is NOT an RCDO admin. Gating on canReview let
+    // managers into edit mode where the admin mutations 403. The gate must key off canEditRcdo.
+    server.use(
+      http.get('*/api/settings/account', () =>
+        HttpResponse.json({
+          id: 'mgr',
+          email: 'manager@solovis.com',
+          displayName: 'Manager User',
+          timezone: 'America/Chicago',
+          canReview: true,
+          canEditRcdo: false,
+        }),
+      ),
+    );
+    render(withStore(<RcdoBrowser />));
+    await screen.findByTestId('strategy-tree');
+    // No toggle → the manager cannot enter edit mode at all.
+    expect(screen.queryByTestId('strategy-edit-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('strategy-edit-banner')).not.toBeInTheDocument();
   });
 
   it('creates a new Rally Cry through the admin mutation and the refetched tree shows it', async () => {

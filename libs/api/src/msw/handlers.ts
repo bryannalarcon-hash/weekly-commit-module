@@ -66,13 +66,15 @@ let outlook: OutlookConnectionDto = {
   available: true,
 };
 
-/** Default account profile for the acting member (Settings → Account). */
+/** Default account profile for the acting member (Settings → Account). The mock acts as an admin:
+ *  canReview AND canEditRcdo are true so the RCDO admin Edit-tree surface is exercisable by default. */
 const defaultAccount = (): MemberAccountDto => ({
   id: MOCK_MEMBER_ID,
   email: 'lindsley.alvaro@solovis.com',
   displayName: 'Lindsley Alvaro',
   timezone: 'America/Chicago',
   canReview: true,
+  canEditRcdo: true,
 });
 /** Default notification toggles for the acting member (Settings → Notifications). */
 const defaultNotifications = (): NotificationPreferenceDto => ({
@@ -650,7 +652,7 @@ export const handlers = [
 
   http.put(`${BASE}/settings/account`, async ({ request }) => {
     const req = (await request.json()) as UpdateMemberAccountDto;
-    // email/id/canReview are server-owned; only displayName + timezone are editable.
+    // email/id/canReview/canEditRcdo are server-owned; only displayName + timezone are editable.
     account = {
       ...account,
       displayName: req.displayName,

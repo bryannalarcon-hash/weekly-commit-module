@@ -5,7 +5,10 @@
 // full window.location.assign reload so auth re-resolves and the RTK Query cache starts fresh
 // (deliberate; no stale cross-member data). HARD GUARD (KTD13): renders null unless isE2e() — the
 // real Auth0 path never shows it. Esc / outside-click closes the menu (local listeners, no Scrim so
-// the page is not dimmed). Testids: persona-pill, persona-menu, persona-option-<slug>.
+// the page is not dimmed). The menu also exposes a demo-only "Reset demo data" action (persona-reset):
+// after a window.confirm guard it POSTs /api/e2e/reset (same-origin via nginx) then hard-reloads to
+// the seeded state. Testids: persona-pill, persona-menu, persona-option-<slug>, persona-signout,
+// persona-reset.
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, Icon } from '@wcm/ui';
 import {
@@ -28,6 +31,16 @@ function switchToPersona(p: DemoPersona): void {
   persistE2eIdentity(identityOf(p));
   const q = new URLSearchParams({ member: p.slug, manager: String(p.isManager), name: p.name });
   window.location.assign(`/?${q.toString()}`);
+}
+
+/**
+ * Reset the demo back to its seeded state: confirm (so an accidental click doesn't wipe state),
+ * POST the backend reset endpoint (same-origin via nginx — the data layer's '/api' base), then
+ * hard-reload to '/' regardless of the request outcome so identity + RTK Query re-resolve fresh.
+ */
+function resetDemoData(): void {
+  if (!window.confirm('Reset all demo data to the seeded state?')) return;
+  void fetch('/api/e2e/reset', { method: 'POST' }).finally(() => window.location.assign('/'));
 }
 
 export function PersonaPill(): JSX.Element | null {
@@ -154,6 +167,26 @@ export function PersonaPill(): JSX.Element | null {
             }}
           >
             <Icon.unlock size={14} aria-hidden /> Sign out
+          </button>
+          {/* Demo-only data reset: re-seed the backend, then hard-reload to the clean seeded state. */}
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="persona-reset"
+            onClick={resetDemoData}
+            className="btn btn-quiet"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: 'var(--r-sm)',
+              textAlign: 'left',
+              color: 'var(--ink-mid)',
+            }}
+          >
+            <Icon.refresh size={14} aria-hidden /> Reset demo data
           </button>
         </div>
       ) : null}

@@ -2,8 +2,9 @@
 // SecurityFilterChain is ALWAYS active: it permits the health/openapi probes AND the browser-borne
 // Graph consent callback (which carries no bearer token and is guarded by a signed `state`
 // instead),
-// gates manager-only routes (rollup, review, reconcile transitions, the CB-1 Outlook schedule)
-// behind SCOPE_reconcile:commits,
+// gates manager-only routes (rollup, the review queue, per-commit review, the CB-1 Outlook
+// schedule) behind SCOPE_reconcile:commits — the reconcile transitions are OWNER-driven and only
+// require an authenticated member (the service enforces owner-only),
 // gates the admin RCDO edit-tree mutations (POST/PUT/DELETE /api/admin/rcdo/**) behind the
 // SCOPE_admin:rcdo authority (Auth0 "admin:rcdo" permission),
 // and requires a valid JWT everywhere else; bearer auth failures render as 401/403 with an RFC-7807
@@ -69,18 +70,22 @@ public class SecurityConfig {
                     // (GraphConsentState HMAC + expiry) it verifies to derive the acting member.
                     .requestMatchers(HttpMethod.GET, "/api/graph/callback")
                     .permitAll()
-                    // Manager-only routes: rollup, the review queue, per-commit review, and the
-                    // reconcile transitions.
+                    // Manager-only routes: rollup, the review queue, and per-commit review.
                     .requestMatchers(HttpMethod.GET, "/api/rollup", "/api/rollup/**")
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.GET, "/api/review-queue", "/api/review-queue/**")
                     .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/review")
                     .hasAuthority(MANAGER_SCOPE)
+                    // The reconcile transitions are OWNER-driven (the IC reports
+                    // planned-vs-actual),
+                    // so they only require an authenticated member — the service enforces
+                    // owner-only
+                    // (loadOwned). They are NOT manager-scoped.
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconcile")
-                    .hasAuthority(MANAGER_SCOPE)
+                    .authenticated()
                     .requestMatchers(HttpMethod.POST, "/api/commits/*/reconciled")
-                    .hasAuthority(MANAGER_SCOPE)
+                    .authenticated()
                     // CB-1: a manager schedules an ad-hoc Outlook event with one of their reports.
                     .requestMatchers(HttpMethod.POST, "/api/integration/outlook/schedule")
                     .hasAuthority(MANAGER_SCOPE)

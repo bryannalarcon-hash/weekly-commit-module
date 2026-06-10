@@ -1,14 +1,13 @@
 // LifecycleServiceTest — exhaustive pure-logic tests for the weekly-commit FSM (U9).
 // Drives every legal/illegal (from->to) edge, the DRAFT->LOCKED link guard, snapshot immutability
-// under later status edits, the RECONCILED=>REVIEWED invariant, and incomplete-only carry-forward.
+// under later status edits, the OWNER-driven RECONCILING->RECONCILED transition (which touches no
+// ManagerReview), and incomplete-only carry-forward.
 // No Spring/DB: LifecycleService operates on in-memory aggregates.
 package com.solovis.wcm.commit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.solovis.wcm.review.ManagerReview;
-import com.solovis.wcm.review.ReviewState;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.EnumSet;
@@ -208,28 +207,25 @@ class LifecycleServiceTest {
         .isInstanceOf(IllegalTransitionException.class);
   }
 
-  // --- RECONCILING -> RECONCILED forces REVIEWED -----------------------------------------------
+  // --- RECONCILING -> RECONCILED (owner-driven, no review side-effect) --------------------------
 
   @Test
-  void reconcileForcesManagerReviewToReviewedAndStampsTimes() {
+  void reconcileMovesReconcilingToReconciledAndDoesNotTouchAnyReview() {
     WeeklyCommit wc = commit(LifecycleState.RECONCILING);
-    ManagerReview review =
-        ManagerReview.builder().weeklyCommitId(wc.getId()).state(ReviewState.INCOMPLETE).build();
 
-    service.reconcile(wc, review, T0);
+    service.reconcile(wc, T0);
 
     assertThat(wc.getLifecycleState()).isEqualTo(LifecycleState.RECONCILED);
-    assertThat(wc.getReviewedAt()).isEqualTo(T0);
-    assertThat(review.getState()).isEqualTo(ReviewState.REVIEWED);
-    assertThat(review.isReviewed()).isTrue();
-    assertThat(review.getReviewedAt()).isEqualTo(T0);
+    // Reconciliation no longer marks a review or stamps the commit's reviewedAt — that is the
+    // manager's separate step (ReviewService), so reviewedAt stays null here.
+    assertThat(wc.getReviewedAt()).isNull();
+    assertThat(wc.getReviewerId()).isNull();
   }
 
   @Test
   void reconcileRejectedFromNonReconciling() {
     WeeklyCommit wc = commit(LifecycleState.LOCKED);
-    ManagerReview review = ManagerReview.builder().weeklyCommitId(wc.getId()).build();
-    assertThatThrownBy(() -> service.reconcile(wc, review, T0))
+    assertThatThrownBy(() -> service.reconcile(wc, T0))
         .isInstanceOf(IllegalTransitionException.class);
   }
 

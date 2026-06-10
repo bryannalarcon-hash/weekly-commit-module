@@ -99,15 +99,13 @@ class DemoSeederIT {
     assertThat(snapshots.findByWeeklyCommitId(sana)).isPresent();
     assertThat(snapshots.findByWeeklyCommitId(omar)).isPresent();
     assertThat(snapshots.findByWeeklyCommitId(tomCommit)).isEmpty();
-    // RECONCILED Diego has a REVIEWED review; RECONCILING Omar's review is still INCOMPLETE.
+    // RECONCILED Diego has a REVIEWED review (the manager reviewed it AFTER the IC reconciled).
     assertThat(reviews.findByWeeklyCommitId(diego))
         .get()
         .extracting(r -> r.getState())
         .isEqualTo(ReviewState.REVIEWED);
-    assertThat(reviews.findByWeeklyCommitId(omar))
-        .get()
-        .extracting(r -> r.getState())
-        .isEqualTo(ReviewState.INCOMPLETE);
+    // RECONCILING Omar has NO review: the IC is still reconciling, the manager reviews only after.
+    assertThat(reviews.findByWeeklyCommitId(omar)).isEmpty();
 
     // Second explicit run is also a no-op: counts unchanged.
     seeder.seed();
