@@ -12,9 +12,15 @@
 //
 // Data layer UNCHANGED (RTK Query only). Autosave is debounced (400ms) via updateCommit; the timer is
 // cleared on unmount (no stray PUT/setState on a dead node) and Submit/Lock FLUSHES any pending autosave
-// FIRST so the lock never freezes a pre-edit plan. Preserves every load-bearing testid: edit-commit,
-// add-item, add-first-item, composer-list, composer-item, item-text, link-outcome, delete-item,
-// drag-handle, chess-tier-select, submit-lock, validation-summary, confirm-accept, rcdo-picker, rcdo-tree.
+// FIRST so the lock never freezes a pre-edit plan. While ANY item's text is blank the autosave HOLDS
+// (no doomed 400 PUT; AutosaveIndicator shows the honest 'pending', never "saved") and resumes once
+// every item has text; a 4xx save failure parks on the error affordance (no retry loop — only a fresh
+// edit reschedules). A NON-DRAFT commit (stale deep link/back/refresh into LOCKED/RECONCILING/
+// RECONCILED/CARRY_FORWARD) renders the read-only edit-locked-guard instead of the editor — Back to
+// My Week always, Open reconciliation while LOCKED/RECONCILING — so no editor, no autosave timers, no
+// 409 loop. Preserves every load-bearing testid: edit-commit, add-item, add-first-item, composer-list,
+// composer-item, item-text, link-outcome, delete-item, drag-handle, chess-tier-select, submit-lock,
+// validation-summary, confirm-accept, rcdo-picker, rcdo-tree.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
@@ -47,6 +53,7 @@ import {
   CarriedForwardCard,
   ChessSelector,
   ConfirmDialog,
+  EmptyState,
   ErrorState,
   Icon,
   Pulse,
@@ -80,6 +87,8 @@ export interface EditCommitProps {
   onBack?: () => void;
   /** Called after a successful lock so the parent can route to the read-only view. */
   onLocked?: (commit: CommitDto) => void;
+  /** Routes to reconciliation — offered by the locked guard while LOCKED/RECONCILING. */
+  onReconcile?: (commitId: string) => void;
 }
 
 /** One sortable composer row — the edit-mode CommitItemRow rendered as a @dnd-kit sortable <li> so the
@@ -197,7 +206,7 @@ function SortableComposerRow({
   );
 }
 
-export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX.Element {
+export function EditCommit({ commitId, onBack, onLocked, onReconcile }: EditCommitProps): JSX.Element {
   const { data, isLoading, isError, refetch } = useGetCommitQuery(commitId);
   const { data: pulse } = useGetPulseQuery(commitId);
   // The RCDO tree gives us the title for every Supporting Outcome (so a previously-linked item shows
@@ -235,6 +244,18 @@ export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX
     [],
   );
 
+  // Non-DRAFT = read-only: the editor is replaced by the locked guard below. Should the state flip
+  // mid-session (e.g. a 409'd save invalidates the commit tag and the refetch reveals a lock), kill
+  // any armed debounce so no autosave timer survives into the read-only state.
+  const lockedOut = data !== undefined && data.lifecycleState !== 'DRAFT';
+  useEffect(() => {
+    if (lockedOut && saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingItems.current = null;
+    }
+  }, [lockedOut]);
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -258,17 +279,28 @@ export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX
       })
         .unwrap()
         .then(() => setAutosave('saved'))
+        // Park on the error affordance — NO automatic retry of a payload that just failed. A 4xx
+        // (validation/conflict) can never succeed unchanged, so only a fresh edit reschedules; a
+        // 409's tag invalidation refetches the commit and a revealed lock flips to the guard.
         .catch(() => setAutosave('error'));
     },
     [commitId, updateCommit],
   );
 
-  // Debounced autosave: remember the latest items, persist after 400ms idle.
+  // Debounced autosave: remember the latest items, persist after 400ms idle. While ANY item's text
+  // is blank, HOLD instead — the server 400s blank text ("text must not be blank"), so the network
+  // is skipped entirely (local state keeps the edit) and the indicator honestly reports 'pending'.
   const scheduleSave = useCallback(
     (next: CommitItemDto[]) => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (next.some((i) => !i.text.trim())) {
+        saveTimer.current = null;
+        pendingItems.current = null;
+        setAutosave('pending');
+        return;
+      }
       setAutosave('saving');
       pendingItems.current = next;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         saveTimer.current = null;
         void runSave(next);
@@ -279,13 +311,16 @@ export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX
 
   // Cancel any pending debounce and persist its items NOW, awaiting the PUT. No-op when nothing is
   // pending. Used to flush before a lock so the POST /submit never races a stale plan onto the server.
+  // Blank-item payloads never reach pendingItems (scheduleSave holds them) and the lock button is
+  // disabled while blank items exist (canSubmit) — the belt-and-braces filter keeps a blank from ever
+  // riding a flush into the server's 400.
   const flushSave = useCallback(async (): Promise<void> => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
     const next = pendingItems.current;
-    if (next) await runSave(next);
+    if (next && !next.some((i) => !i.text.trim())) await runSave(next);
   }, [runSave]);
 
   const mutate = useCallback(
@@ -406,6 +441,50 @@ export function EditCommit({ commitId, onBack, onLocked }: EditCommitProps): JSX
     return (
       <div className="page" data-testid="edit-commit">
         <ErrorState title="Could not load this week" onRetry={() => void refetch()} />
+      </div>
+    );
+  }
+
+  // Read-only guard for a NON-DRAFT commit (stale deep link / back / refresh). Rendering the editor
+  // here would invite edits whose autosave PUT 409s forever and is silently lost on reload — so no
+  // editor, no autosave, only the right next step.
+  if (data.lifecycleState !== 'DRAFT') {
+    const reconcilable =
+      data.lifecycleState === 'LOCKED' || data.lifecycleState === 'RECONCILING';
+    return (
+      <div className="page" data-testid="edit-commit">
+        <div data-testid="edit-locked-guard">
+          <EmptyState
+            icon="lock"
+            title={
+              reconcilable ? 'This week is locked' : 'This week is finalized'
+            }
+            description={
+              reconcilable
+                ? `Your plan for ${formatWeekRange(data.weekStart)} was submitted and can no longer be edited. Reconcile what happened, or head back to My Week.`
+                : `Your plan for ${formatWeekRange(data.weekStart)} has been reconciled and can no longer be edited.`
+            }
+            action={
+              <div
+                className="flex flex-wrap"
+                style={{ gap: 10, justifyContent: 'center' }}
+              >
+                <button type="button" className="btn btn-primary" onClick={() => onBack?.()}>
+                  <Icon.chevL size={15} /> Back to My Week
+                </button>
+                {reconcilable && onReconcile && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => onReconcile(commitId)}
+                  >
+                    <Icon.check size={15} /> Open reconciliation
+                  </button>
+                )}
+              </div>
+            }
+          />
+        </div>
       </div>
     );
   }

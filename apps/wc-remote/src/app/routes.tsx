@@ -66,7 +66,12 @@ function EditRoute(): JSX.Element {
   const { commitId = '' } = useParams();
   const nav = useNavigate();
   return (
-    <EditCommit commitId={commitId} onBack={() => nav('/')} onLocked={() => nav('/')} />
+    <EditCommit
+      commitId={commitId}
+      onBack={() => nav('/')}
+      onLocked={() => nav('/')}
+      onReconcile={(id) => nav(`/reconcile/${id}`)}
+    />
   );
 }
 

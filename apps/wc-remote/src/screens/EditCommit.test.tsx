@@ -5,8 +5,12 @@
 // leaf links the item and ENABLES Submit; the lock confirm dialog locks and calls onLocked; the reorder
 // grip is KEYBOARD-ACCESSIBLE (focusable, has an aria-label, moves with Space + arrows); add/delete work;
 // the empty composer shows the "add your first priority" affordance (add-first-item); the debounced
-// autosave timer is CLEARED on unmount (no stray PUT after the screen is gone); and Submit FLUSHES the
-// pending autosave before the submit POST so a lock never races a stale plan onto the server.
+// autosave timer is CLEARED on unmount (no stray PUT after the screen is gone); Submit FLUSHES the
+// pending autosave before the submit POST so a lock never races a stale plan onto the server; a
+// NON-DRAFT commit (stale deep link) renders the read-only edit-locked-guard — no editor, no PUT —
+// with Back to My Week always and Open reconciliation only while LOCKED/RECONCILING; and a BLANK
+// item never autosaves (no doomed 400 PUT) while the indicator honestly reports 'pending', resuming
+// the normal debounced PUT once every item has text.
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -53,12 +57,15 @@ const FIXED_TREE: RallyCryNode[] = [
   },
 ];
 
-function seedCommit(items: CommitDto['items']): void {
+function seedCommit(
+  items: CommitDto['items'],
+  lifecycleState: CommitDto['lifecycleState'] = 'DRAFT',
+): void {
   const dto: CommitDto = {
     id: 'c1',
     memberId: 'm1',
     weekStart: '2026-06-08',
-    lifecycleState: 'DRAFT',
+    lifecycleState,
     submittedAt: null,
     reviewedAt: null,
     items,
@@ -318,5 +325,98 @@ describe('EditCommit', () => {
     await waitFor(() => expect(onLocked).toHaveBeenCalledOnce());
     // The flush forced the autosave PUT to complete before the submit POST reached the server.
     expect(order).toEqual(['PUT', 'SUBMIT']);
+  });
+
+  it('renders the read-only guard for a LOCKED commit — no editor, no autosave PUT', async () => {
+    // A stale deep link / back / refresh can land /edit/{id} on a non-DRAFT commit. The screen must
+    // NOT render the editable composer (whose autosave PUT would 409 forever) — only the guard.
+    let putHits = 0;
+    seedCommit([item('a', true)], 'LOCKED');
+    server.use(
+      http.put('*/commits/c1', () => {
+        putHits += 1;
+        return new HttpResponse(null, { status: 409 });
+      }),
+    );
+    const onReconcile = vi.fn();
+    render(withStore(<EditCommit commitId="c1" onBack={vi.fn()} onReconcile={onReconcile} />));
+
+    const guard = await screen.findByTestId('edit-locked-guard');
+    expect(guard).toBeInTheDocument();
+    // No editor surfaces: no text inputs, no add/submit affordances.
+    expect(screen.queryByTestId('item-text')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('add-item')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('submit-lock')).not.toBeInTheDocument();
+
+    // LOCKED is reconcilable → the guard offers reconciliation when the callback is wired.
+    const user = userEvent.setup();
+    await user.click(within(guard).getByRole('button', { name: /open reconciliation/i }));
+    expect(onReconcile).toHaveBeenCalledWith('c1');
+
+    // Past the debounce window: the guard armed no autosave timer → zero PUTs.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(putHits).toBe(0);
+  });
+
+  it('renders the guard for a RECONCILED commit with a working "Back to My Week"', async () => {
+    seedCommit([item('a', true)], 'RECONCILED');
+    const onBack = vi.fn();
+    const onReconcile = vi.fn();
+    const user = userEvent.setup();
+    render(withStore(<EditCommit commitId="c1" onBack={onBack} onReconcile={onReconcile} />));
+
+    const guard = await screen.findByTestId('edit-locked-guard');
+    // RECONCILED is final — no reconciliation affordance, only the way back.
+    expect(
+      within(guard).queryByRole('button', { name: /open reconciliation/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(guard).getByRole('button', { name: /back to my week/i }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('holds autosave while an item is blank (no doomed PUT, indicator never claims saved), then saves once on text', async () => {
+    // "Add commit item" inserts a blank item the server would 400 ("text must not be blank"). The
+    // autosave must SKIP the network while any text is blank — and the indicator must not lie.
+    let putHits = 0;
+    let lastBody: { items: Array<{ text: string }> } | null = null;
+    seedCommit([item('a', true)]);
+    server.use(
+      http.put('*/commits/c1', async ({ request }) => {
+        putHits += 1;
+        lastBody = (await request.json()) as { items: Array<{ text: string }> };
+        return HttpResponse.json({
+          id: 'c1', memberId: 'm1', weekStart: '2026-06-08', lifecycleState: 'DRAFT',
+          submittedAt: null, reviewedAt: null, items: [],
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(withStore(<EditCommit commitId="c1" />));
+    await screen.findByTestId('add-item');
+
+    await user.click(screen.getByTestId('add-item'));
+    await waitFor(() => expect(screen.getAllByTestId('composer-item')).toHaveLength(2));
+
+    // The blank item parks the autosave: honest 'pending' status, never "Saved"/"All changes saved".
+    const indicator = screen.getByTestId('autosave-indicator');
+    await waitFor(() => expect(indicator).toHaveAttribute('data-status', 'pending'));
+    expect(indicator).not.toHaveTextContent(/all changes saved|saved ·/i);
+
+    // Well past the 400ms debounce: still no PUT reached the server.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(putHits).toBe(0);
+
+    // Give the blank item text → the normal debounce persists exactly once, with the item.
+    const blankInput = screen.getAllByTestId('item-text')[1]!;
+    await user.type(blankInput, 'Ship it');
+    await waitFor(() => expect(putHits).toBe(1));
+    expect(lastBody!.items).toHaveLength(2);
+    expect(lastBody!.items[1]!.text).toBe('Ship it');
+    await waitFor(() => expect(indicator).toHaveAttribute('data-status', 'saved'));
   });
 });

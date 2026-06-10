@@ -1,12 +1,14 @@
 // libs/ui/src/AutosaveIndicator.tsx — the Draft-screen autosave status ("Saved · just now") from brief
 // §4.1, re-skinned to the WCM design (prototype/wcm/ui.jsx Autosave): a small mono, letter-spaced status
 // — an amber pulsing dot while saving, a green check + "Saved · {label}" when saved, a red alert while
-// erroring. A polite live region announces save state to AT; status is text + icon/dot, never color-only.
-// Pure/presentational: the parent owns the save lifecycle. Preserves data-testid=autosave-indicator,
-// data-status, role=status, aria-live=polite + the exact status copy the screens/tests rely on.
+// erroring, and a still amber dot + "Changes pending" while edits are HELD locally (e.g. a blank item
+// the server would reject — the parent skips the network but must not claim "saved"). A polite live
+// region announces save state to AT; status is text + icon/dot, never color-only. Pure/presentational:
+// the parent owns the save lifecycle. Preserves data-testid=autosave-indicator, data-status,
+// role=status, aria-live=polite + the exact status copy the screens/tests rely on.
 import { Icon } from './icons';
 
-export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+export type AutosaveStatus = 'idle' | 'saving' | 'pending' | 'saved' | 'error';
 
 export interface AutosaveIndicatorProps {
   status: AutosaveStatus;
@@ -27,6 +29,14 @@ function contentFor(status: AutosaveStatus, savedLabel: string): Content {
       return {
         node: <span className="dot live-pulse" style={{ background: 'var(--amber)' }} aria-hidden />,
         text: 'Saving…',
+        color: 'var(--ink-low)',
+      };
+    case 'pending':
+      // Edits exist but are deliberately NOT persisted yet (the parent is holding an invalid
+      // payload locally). A steady amber dot — present, not in flight, and never "saved".
+      return {
+        node: <span className="dot" style={{ background: 'var(--amber)' }} aria-hidden />,
+        text: 'Changes pending',
         color: 'var(--ink-low)',
       };
     case 'saved':

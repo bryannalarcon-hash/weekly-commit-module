@@ -20,6 +20,14 @@ describe('AutosaveIndicator', () => {
     );
   });
 
+  it('reports held-back edits as "Changes pending" — never claiming saved', () => {
+    render(<AutosaveIndicator status="pending" />);
+    const el = screen.getByTestId('autosave-indicator');
+    expect(el).toHaveAttribute('data-status', 'pending');
+    expect(el).toHaveTextContent('Changes pending');
+    expect(el).not.toHaveTextContent(/all changes saved|saved ·/i);
+  });
+
   it('surfaces an error state with text + icon (not color-only)', () => {
     const { container } = render(<AutosaveIndicator status="error" />);
     expect(screen.getByTestId('autosave-indicator')).toHaveTextContent(/could not save/i);
