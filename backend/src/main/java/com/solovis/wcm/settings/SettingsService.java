@@ -94,19 +94,19 @@ public class SettingsService {
         member.getDisplayName(),
         member.getTimezone(),
         member.canReview(),
-        hasAdminRcdoScope());
+        canEditRcdo());
   }
 
   /**
-   * True when the acting request carries the admin:rcdo scope (SCOPE_admin:rcdo) — the same
-   * authority that gates the RCDO edit-tree mutations. The FE uses this to show RCDO edit mode only
-   * to admins.
+   * True when the acting request carries MANAGER_SCOPE (SCOPE_reconcile:commits) — the same
+   * authority that now gates the RCDO edit-tree mutations. The FE uses this to show RCDO "Edit
+   * tree" mode to managers (any MANAGER edits the shared strategy tree).
    */
-  private static boolean hasAdminRcdoScope() {
+  private static boolean canEditRcdo() {
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     return auth != null
         && auth.getAuthorities().stream()
-            .anyMatch(a -> a.getAuthority().equals(SecurityConfig.ADMIN_RCDO_SCOPE));
+            .anyMatch(a -> a.getAuthority().equals(SecurityConfig.MANAGER_SCOPE));
   }
 
   private static NotificationPreferenceDto toNotificationDto(NotificationPreference pref) {

@@ -5,7 +5,8 @@
 // cascades DOWN, removing children before the node (so parent-FK rows are never orphaned), and a
 // SupportingOutcome that any commit_item links is REFUSED with IllegalCommitStateException -> 409
 // (blocking, not nulling, to keep weekly plans referentially intact). AuthZ is enforced upstream by
-// the SCOPE_admin:rcdo gate in SecurityConfig; this service assumes the caller is already an admin.
+// the MANAGER_SCOPE (SCOPE_reconcile:commits) gate in SecurityConfig; this service assumes the
+// caller is already a manager (any MANAGER may edit the shared strategy tree).
 package com.solovis.wcm.rcdo;
 
 import com.solovis.wcm.commit.CommitItemRepository;

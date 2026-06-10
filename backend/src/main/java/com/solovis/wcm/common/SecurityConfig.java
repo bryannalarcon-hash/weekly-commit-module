@@ -5,8 +5,9 @@
 // gates manager-only routes (rollup, the review queue, per-commit review, the CB-1 Outlook
 // schedule) behind SCOPE_reconcile:commits — the reconcile transitions are OWNER-driven and only
 // require an authenticated member (the service enforces owner-only),
-// gates the admin RCDO edit-tree mutations (POST/PUT/DELETE /api/admin/rcdo/**) behind the
-// SCOPE_admin:rcdo authority (Auth0 "admin:rcdo" permission),
+// gates the RCDO edit-tree mutations (POST/PUT/DELETE /api/admin/rcdo/**) behind MANAGER_SCOPE
+// (SCOPE_reconcile:commits) — any MANAGER edits the shared strategy tree, the same authority that
+// gates the manager review/rollup/reconcile-review routes,
 // and requires a valid JWT everywhere else; bearer auth failures render as 401/403 with an RFC-7807
 // problem+json body (ProblemAuthHandlers), matching the service-layer error shape. Auth0
 // "permissions" are mapped
@@ -44,11 +45,11 @@ import org.springframework.security.web.SecurityFilterChain;
 @Profile("!e2e")
 public class SecurityConfig {
 
-  /** Auth0 permission required by manager-only routes (mapped to a SCOPE_ authority). */
+  /**
+   * Auth0 permission required by manager-only routes — including the RCDO edit-tree mutations (any
+   * MANAGER edits the shared strategy tree) — mapped to a SCOPE_ authority.
+   */
   public static final String MANAGER_SCOPE = "SCOPE_reconcile:commits";
-
-  /** Auth0 permission required to edit the RCDO strategy tree (mapped to a SCOPE_ authority). */
-  public static final String ADMIN_RCDO_SCOPE = "SCOPE_admin:rcdo";
 
   /** The Auth0 custom claim carrying the user's API permissions (when RBAC is enabled). */
   private static final String PERMISSIONS_CLAIM = "permissions";
@@ -89,15 +90,15 @@ public class SecurityConfig {
                     // CB-1: a manager schedules an ad-hoc Outlook event with one of their reports.
                     .requestMatchers(HttpMethod.POST, "/api/integration/outlook/schedule")
                     .hasAuthority(MANAGER_SCOPE)
-                    // Admin-only: every RCDO edit-tree mutation (create/update/delete at any
-                    // level).
+                    // Manager-level: every RCDO edit-tree mutation (create/update/delete at any
+                    // level) — any MANAGER edits the shared strategy tree.
                     // GET /api/rcdo/** stays merely authenticated (read of the tree is not gated).
                     .requestMatchers(HttpMethod.POST, "/api/admin/rcdo/**")
-                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.PUT, "/api/admin/rcdo/**")
-                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .hasAuthority(MANAGER_SCOPE)
                     .requestMatchers(HttpMethod.DELETE, "/api/admin/rcdo/**")
-                    .hasAuthority(ADMIN_RCDO_SCOPE)
+                    .hasAuthority(MANAGER_SCOPE)
                     // Everything else needs a valid token (row-level authz then runs in services).
                     .anyRequest()
                     .authenticated())

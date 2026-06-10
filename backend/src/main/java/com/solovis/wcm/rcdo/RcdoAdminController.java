@@ -2,9 +2,9 @@
 // at
 // /api/admin/rcdo, it exposes POST/PUT/DELETE at every level (rally-cries, defining-objectives,
 // outcomes, supporting-outcomes), delegating all logic + cascade/guard rules to RcdoAdminService.
-// Every mutation is gated upstream by the SCOPE_admin:rcdo authority (SecurityConfig prod chain /
-// E2eSecurityConfig hermetic chain), so a non-admin caller is rejected with 403 before reaching
-// here.
+// Every mutation is gated upstream by MANAGER_SCOPE (SCOPE_reconcile:commits) — the manager-level
+// authority (SecurityConfig prod chain / E2eSecurityConfig hermetic chain) — so a non-manager
+// caller is rejected with 403 before reaching here; any MANAGER edits the shared strategy tree.
 // DELETE returns 204 No Content; create/update return the full response DTO. Read of the tree stays
 // on the public-to-authenticated RcdoController (GET /api/rcdo/tree) and is unaffected.
 package com.solovis.wcm.rcdo;

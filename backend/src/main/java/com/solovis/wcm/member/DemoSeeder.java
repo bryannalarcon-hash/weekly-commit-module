@@ -285,9 +285,10 @@ public class DemoSeeder implements CommandLineRunner {
    * (used by the E2E X-Debug-Member path and the demo). For a LIVE Auth0 demo, three role-anchor
    * members can be re-pointed at REAL Auth0 user subjects via env vars so a real browser login
    * lands on the already-rich seeded member (its manager graph + commits + reconciliations):
-   * sofia=admin (top-level + admin:rcdo role), priya=manager (has reports), diego=employee (full
-   * commit history). Unset env (tests/e2e/normal boot) keeps the seed subject, so behavior is
-   * unchanged there.
+   * sofia=top-level exec (MANAGER), priya=line manager (has reports), diego=employee/IC (full
+   * commit history). Both managers now carry MANAGER_SCOPE, which gates the RCDO "Edit tree" (any
+   * MANAGER may edit the shared strategy tree). Unset env (tests/e2e/normal boot) keeps the seed
+   * subject, so behavior is unchanged there.
    */
   private static String resolveSubject(String slug) {
     String override =

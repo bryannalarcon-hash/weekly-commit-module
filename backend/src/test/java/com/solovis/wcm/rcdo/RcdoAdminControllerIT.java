@@ -1,8 +1,9 @@
-// RcdoAdminControllerIT — MockMvc tests for the admin RCDO edit-tree CRUD (/api/admin/rcdo/**),
-// full stack against Testcontainers Postgres on the JWT chain. Proves: an admin (SCOPE_admin:rcdo)
-// can create/update/delete at every level; a cascade delete removes the whole subtree; deleting a
-// SupportingOutcome a commit_item links is blocked with 409; non-admins (employee/manager) get 403;
-// an unknown id -> 404; an invalid body -> 400; and owner + date-window round-trip through the API.
+// RcdoAdminControllerIT — MockMvc tests for the RCDO edit-tree CRUD (/api/admin/rcdo/**),
+// full stack against Testcontainers Postgres on the JWT chain. Proves: a MANAGER
+// (SCOPE_reconcile:commits) can create/update/delete at every level; a cascade delete removes the
+// whole subtree; deleting a SupportingOutcome a commit_item links is blocked with 409; an
+// EMPLOYEE/IC gets 403 and anonymous gets 401; an unknown id -> 404; an invalid body -> 400; and
+// owner + date-window round-trip through the API.
 package com.solovis.wcm.rcdo;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -31,29 +32,22 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 class RcdoAdminControllerIT extends AbstractWebIT {
 
-  /** The Auth0 permission that gates the admin RCDO edit-tree (mapped to SCOPE_admin:rcdo). */
-  private static final String ADMIN_PERMISSION = "admin:rcdo";
-
   @Autowired private RcdoRepository rcdo;
   @Autowired private MemberRepository members;
   @Autowired private WeeklyCommitRepository commits;
   @Autowired private CommitItemRepository commitItems;
 
-  /** A bearer with the admin:rcdo permission -> SCOPE_admin:rcdo authority. */
-  private RequestPostProcessor admin() {
-    return TestJwtConfig.bearer(
-        TestJwtConfig.mint(
-            "auth0|admin-" + UUID.randomUUID(), "admin@solovis.test", ADMIN_PERMISSION));
-  }
-
-  /** A plain employee (no admin permission). */
-  private RequestPostProcessor employee() {
-    return TestJwtConfig.employee("auth0|emp-" + UUID.randomUUID(), "emp@solovis.test");
-  }
-
-  /** A manager (reconcile:commits but NOT admin:rcdo). */
+  /**
+   * A MANAGER (reconcile:commits -> SCOPE_reconcile:commits) — the authority that now gates the
+   * RCDO edit-tree, so any MANAGER may create/update/delete.
+   */
   private RequestPostProcessor manager() {
     return TestJwtConfig.manager("auth0|mgr-" + UUID.randomUUID(), "mgr@solovis.test");
+  }
+
+  /** A plain employee/IC (no manager scope) — RCDO mutations must 403. */
+  private RequestPostProcessor employee() {
+    return TestJwtConfig.employee("auth0|emp-" + UUID.randomUUID(), "emp@solovis.test");
   }
 
   private Member seedMember() {
@@ -90,7 +84,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
   // --- Create at each level ---------------------------------------------------------------------
 
   @Test
-  void adminCreatesRallyCryWithOwnerAndWindow() throws Exception {
+  void managerCreatesRallyCryWithOwnerAndWindow() throws Exception {
     Member owner = seedMember();
     String body =
         """
@@ -101,7 +95,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             post("/api/admin/rcdo/rally-cries")
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isOk())
@@ -114,14 +108,14 @@ class RcdoAdminControllerIT extends AbstractWebIT {
   }
 
   @Test
-  void adminCreatesDefiningObjectiveUnderRally() throws Exception {
+  void managerCreatesDefiningObjectiveUnderRally() throws Exception {
     var path = seedPath("do-" + UUID.randomUUID().toString().substring(0, 8));
     String body = "{\"rallyCryId\":\"%s\",\"title\":\"Child DO\"}".formatted(path.rallyCryId());
 
     mockMvc
         .perform(
             post("/api/admin/rcdo/defining-objectives")
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isOk())
@@ -130,13 +124,13 @@ class RcdoAdminControllerIT extends AbstractWebIT {
   }
 
   @Test
-  void adminCreatesOutcomeAndSupportingOutcome() throws Exception {
+  void managerCreatesOutcomeAndSupportingOutcome() throws Exception {
     var path = seedPath("os-" + UUID.randomUUID().toString().substring(0, 8));
 
     mockMvc
         .perform(
             post("/api/admin/rcdo/outcomes")
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     "{\"definingObjectiveId\":\"%s\",\"title\":\"New Outcome\"}"
@@ -147,7 +141,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             post("/api/admin/rcdo/supporting-outcomes")
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"outcomeId\":\"%s\",\"title\":\"New SO\"}".formatted(path.outcomeId())))
         .andExpect(status().isOk())
@@ -159,7 +153,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             post("/api/admin/rcdo/defining-objectives")
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     "{\"rallyCryId\":\"%s\",\"title\":\"Orphan\"}".formatted(UUID.randomUUID())))
@@ -169,7 +163,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
   // --- Update ----------------------------------------------------------------------------------
 
   @Test
-  void adminUpdatesSupportingOutcomeOwnerAndWindow() throws Exception {
+  void managerUpdatesSupportingOutcomeOwnerAndWindow() throws Exception {
     var path = seedPath("up-" + UUID.randomUUID().toString().substring(0, 8));
     Member owner = seedMember();
     String body =
@@ -181,7 +175,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             put("/api/admin/rcdo/supporting-outcomes/" + path.supportingOutcomeId())
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isOk())
@@ -197,7 +191,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             put("/api/admin/rcdo/rally-cries/" + UUID.randomUUID())
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"x\"}"))
         .andExpect(status().isNotFound());
@@ -208,7 +202,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             post("/api/admin/rcdo/rally-cries")
-                .with(admin())
+                .with(manager())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"  \"}"))
         .andExpect(status().isBadRequest());
@@ -221,7 +215,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     var path = seedPath("del-" + UUID.randomUUID().toString().substring(0, 8));
 
     mockMvc
-        .perform(delete("/api/admin/rcdo/rally-cries/" + path.rallyCryId()).with(admin()))
+        .perform(delete("/api/admin/rcdo/rally-cries/" + path.rallyCryId()).with(manager()))
         .andExpect(status().isNoContent());
 
     // Every level of the subtree is gone.
@@ -254,7 +248,7 @@ class RcdoAdminControllerIT extends AbstractWebIT {
     mockMvc
         .perform(
             delete("/api/admin/rcdo/supporting-outcomes/" + path.supportingOutcomeId())
-                .with(admin()))
+                .with(manager()))
         .andExpect(status().isConflict());
 
     // The leaf is still present — the delete was refused, not silently swallowed.
@@ -263,6 +257,29 @@ class RcdoAdminControllerIT extends AbstractWebIT {
   }
 
   // --- AuthZ ------------------------------------------------------------------------------------
+
+  /** Regression: RCDO editing moved from ADMIN-only to MANAGER-level — a manager can now create. */
+  @Test
+  void managerCanCreateRallyCry() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/admin/rcdo/rally-cries")
+                .with(manager())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Manager-authored Rally\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").exists())
+        .andExpect(jsonPath("$.title").value("Manager-authored Rally"));
+  }
+
+  @Test
+  void managerCanDelete() throws Exception {
+    var path = seedPath("mgrdel-" + UUID.randomUUID().toString().substring(0, 8));
+    mockMvc
+        .perform(delete("/api/admin/rcdo/rally-cries/" + path.rallyCryId()).with(manager()))
+        .andExpect(status().isNoContent());
+    org.junit.jupiter.api.Assertions.assertTrue(rcdo.findRallyCry(path.rallyCryId()).isEmpty());
+  }
 
   @Test
   void employeeCannotCreate() throws Exception {
@@ -276,11 +293,13 @@ class RcdoAdminControllerIT extends AbstractWebIT {
   }
 
   @Test
-  void managerCannotDelete() throws Exception {
-    var path = seedPath("mgr-" + UUID.randomUUID().toString().substring(0, 8));
+  void employeeCannotDelete() throws Exception {
+    var path = seedPath("empdel-" + UUID.randomUUID().toString().substring(0, 8));
     mockMvc
-        .perform(delete("/api/admin/rcdo/rally-cries/" + path.rallyCryId()).with(manager()))
+        .perform(delete("/api/admin/rcdo/rally-cries/" + path.rallyCryId()).with(employee()))
         .andExpect(status().isForbidden());
+    // The delete was refused, not silently swallowed.
+    org.junit.jupiter.api.Assertions.assertTrue(rcdo.findRallyCry(path.rallyCryId()).isPresent());
   }
 
   @Test
