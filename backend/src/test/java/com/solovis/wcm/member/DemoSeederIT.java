@@ -83,21 +83,22 @@ class DemoSeederIT {
             LifecycleState.DRAFT,
             LifecycleState.RECONCILING);
 
-    // Noah's draft has exactly one UNLINKED item (to demo the submit guard, KTD5).
-    UUID noahCommit = DemoSeeder.deterministicId("commit:noah");
-    assertThat(commitItems.findByWeeklyCommitId(noahCommit))
+    // Tom's draft has exactly one UNLINKED item (to demo the submit guard, KTD5).
+    UUID tomCommit = DemoSeeder.deterministicId("commit:tom");
+    assertThat(commitItems.findByWeeklyCommitId(tomCommit))
         .filteredOn(ci -> ci.getSupportingOutcomeId() == null)
         .hasSize(1);
 
     // FSM invariants on seeded data: post-LOCK commits carry a frozen snapshot; RECONCILED carries
-    // a REVIEWED ManagerReview; the DRAFT (Noah) has neither.
+    // a REVIEWED ManagerReview; the DRAFT (Tom) has neither. The LOCKED/DRAFT weeks are owned by
+    // Priya's reports (Sana/Tom) so the demo personas + the manager queue populate.
     UUID diego = DemoSeeder.deterministicId("commit:diego");
-    UUID lena = DemoSeeder.deterministicId("commit:lena");
+    UUID sana = DemoSeeder.deterministicId("commit:sana");
     UUID omar = DemoSeeder.deterministicId("commit:omar");
     assertThat(snapshots.findByWeeklyCommitId(diego)).isPresent();
-    assertThat(snapshots.findByWeeklyCommitId(lena)).isPresent();
+    assertThat(snapshots.findByWeeklyCommitId(sana)).isPresent();
     assertThat(snapshots.findByWeeklyCommitId(omar)).isPresent();
-    assertThat(snapshots.findByWeeklyCommitId(noahCommit)).isEmpty();
+    assertThat(snapshots.findByWeeklyCommitId(tomCommit)).isEmpty();
     // RECONCILED Diego has a REVIEWED review; RECONCILING Omar's review is still INCOMPLETE.
     assertThat(reviews.findByWeeklyCommitId(diego))
         .get()

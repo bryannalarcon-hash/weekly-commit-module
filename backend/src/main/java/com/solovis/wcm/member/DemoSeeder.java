@@ -345,39 +345,44 @@ public class DemoSeeder implements CommandLineRunner {
     freezeSnapshot("snapshot:diego", diego, lockedAt);
     reviewedReview("review:diego", diego, deterministicId("member:priya"), lockedAt);
 
-    // Lena: LOCKED, 2 items. A LOCKED commit already carries a frozen snapshot, no review yet.
-    WeeklyCommit lena =
-        commit("commit:lena", deterministicId("member:lena"), currentWeek, LifecycleState.LOCKED);
+    // Sana (Priya's report): LOCKED current week, 2 items — awaiting Priya's review. A LOCKED
+    // commit
+    // already carries a frozen snapshot, no review yet. Owning this to a demo persona (not a member
+    // outside the bypass list) is what makes "act as Sana" + Priya's review queue actually
+    // populate.
+    WeeklyCommit sana =
+        commit("commit:sana", deterministicId("member:sana"), currentWeek, LifecycleState.LOCKED);
     item(
-        "item:lena:1",
-        lena,
-        "Factor-based risk sleeve",
+        "item:sana:1",
+        sana,
+        "PCAP statement variance reconciliation",
         CommitItemStatus.OPEN,
-        "so:so2.1.a",
+        "so:so1.1.a",
         ChessTier.QUEEN);
     item(
-        "item:lena:2",
-        lena,
-        "Commitment-pacing model",
+        "item:sana:2",
+        sana,
+        "Capital-call capture QA pass",
         CommitItemStatus.OPEN,
-        "so:so2.2.a",
+        "so:so1.2.b",
         ChessTier.KNIGHT);
-    freezeSnapshot("snapshot:lena", lena, lockedAt);
+    freezeSnapshot("snapshot:sana", sana, lockedAt);
 
-    // Noah: DRAFT, one item unlinked (to show the submit guard). No snapshot/review for a DRAFT.
-    WeeklyCommit noah =
-        commit("commit:noah", deterministicId("member:noah"), currentWeek, LifecycleState.DRAFT);
+    // Tom (Priya's report): DRAFT current week, one item still unlinked (to show the submit guard).
+    // No snapshot/review for a DRAFT.
+    WeeklyCommit tom =
+        commit("commit:tom", deterministicId("member:tom"), currentWeek, LifecycleState.DRAFT);
     item(
-        "item:noah:1",
-        noah,
-        "Board book auto-gen",
+        "item:tom:1",
+        tom,
+        "Manager feed onboarding automation",
         CommitItemStatus.OPEN,
-        "so:so3.1.a",
+        "so:so4.1.a",
         ChessTier.ROOK);
     item(
-        "item:noah:2",
-        noah,
-        "Reported-figure audit trail",
+        "item:tom:2",
+        tom,
+        "Ingest pipeline audit trail",
         CommitItemStatus.OPEN,
         null,
         ChessTier.BISHOP);
@@ -403,6 +408,54 @@ public class DemoSeeder implements CommandLineRunner {
         ChessTier.BISHOP);
     freezeSnapshot("snapshot:omar", omar, lockedAt);
     inProgressReview("review:omar", omar, deterministicId("member:wei"));
+
+    // Priya (manager, reports to Sofia): her OWN week is RECONCILED + reviewed by Sofia, so the
+    // demo
+    // persona's My Week is populated — not just the Manager tab. (She also reviews Diego/Sana
+    // above.)
+    WeeklyCommit priya =
+        commit(
+            "commit:priya",
+            deterministicId("member:priya"),
+            currentWeek,
+            LifecycleState.RECONCILED);
+    item(
+        "item:priya:1",
+        priya,
+        "Data-ops roadmap & Q3 staffing plan",
+        CommitItemStatus.COMPLETE,
+        "so:so4.1.a",
+        ChessTier.KING);
+    item(
+        "item:priya:2",
+        priya,
+        "PCAP pipeline SLA review",
+        CommitItemStatus.COMPLETE,
+        "so:so1.1.a",
+        ChessTier.ROOK);
+    freezeSnapshot("snapshot:priya", priya, lockedAt);
+    reviewedReview("review:priya", priya, deterministicId("member:sofia"), lockedAt);
+
+    // Sofia (top exec / admin): her own week is LOCKED — populates her My Week. No review (top of
+    // the
+    // chain). Her primary surface is still the RCDO strategy tree + the org-wide roll-up.
+    WeeklyCommit sofia =
+        commit("commit:sofia", deterministicId("member:sofia"), currentWeek, LifecycleState.LOCKED);
+    item(
+        "item:sofia:1",
+        sofia,
+        "Board narrative: total-portfolio intelligence",
+        CommitItemStatus.OPEN,
+        "so:so5.1.a",
+        ChessTier.KING);
+    item(
+        "item:sofia:2",
+        sofia,
+        "Q3 OKR alignment across team leads",
+        CommitItemStatus.OPEN,
+        "so:so5.2.a",
+        ChessTier.QUEEN);
+    freezeSnapshot("snapshot:sofia", sofia, lockedAt);
   }
 
   private WeeklyCommit commit(String key, UUID memberId, LocalDate week, LifecycleState state) {
