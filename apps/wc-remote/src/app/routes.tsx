@@ -4,7 +4,7 @@
 // onOpenReview/…). Manager routes are wrapped in RequireManager (UX gate; real authz is server-side).
 // No host chrome here — only the feature's own content + the internal sub-nav (rendered in WcShell).
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Skeleton } from '@wcm/ui';
 import { useLazyGetReportLatestCommitQuery } from '@wcm/api';
 import { RequireManager } from './guards';
@@ -97,7 +97,9 @@ function ReviewQueueRoute(): JSX.Element {
   const nav = useNavigate();
   return (
     <RequireManager>
-      <ReviewQueue onOpenReview={(id) => nav(`/manager/review/${id}`)} />
+      <ReviewQueue
+        onOpenReview={(id, name) => nav(`/manager/review/${id}`, { state: { memberName: name } })}
+      />
     </RequireManager>
   );
 }
@@ -105,10 +107,15 @@ function ReviewQueueRoute(): JSX.Element {
 function ReviewDetailRoute(): JSX.Element {
   const { commitId = '' } = useParams();
   const nav = useNavigate();
+  // The queue passes the report's display name via router state; a deep link/refresh has none and
+  // ReviewDetail then resolves the name itself from the review-queue row.
+  const { state } = useLocation();
+  const memberName = (state as { memberName?: string } | null)?.memberName;
   return (
     <RequireManager>
       <ReviewDetail
         commitId={commitId}
+        memberName={memberName}
         onBack={() => nav('/manager')}
         onReconcile={() => nav(`/reconcile/${commitId}`)}
       />

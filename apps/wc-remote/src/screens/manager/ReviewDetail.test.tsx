@@ -87,6 +87,38 @@ function pulse(rating: number | null, comment: string | null): PulseDto {
 }
 
 describe('ReviewDetail', () => {
+  it('resolves the report name from the review queue on a deep link (no memberName prop)', async () => {
+    // Deep link / refresh: the route has no memberName to pass. The header must resolve the real
+    // name via the review-queue row for the commit's week — never show the raw member UUID.
+    server.use(http.get('*/commits/c1', () => HttpResponse.json(commit('LOCKED'))));
+    server.use(
+      http.get('*/review-queue', () =>
+        HttpResponse.json({
+          content: [
+            {
+              memberId: 'm1',
+              memberName: 'Maya Chen',
+              commitId: 'c1',
+              lifecycleState: 'LOCKED',
+              overdue: false,
+              itemCount: 1,
+              completedCount: 0,
+              reviewState: 'UNREVIEWED',
+            },
+          ],
+          totalElements: 1,
+          totalPages: 1,
+          number: 0,
+          size: 50,
+        }),
+      ),
+    );
+    render(withStore(<ReviewDetail commitId="c1" onBack={noop} />));
+    const header = await screen.findByTestId('review-header');
+    await waitFor(() => expect(header).toHaveTextContent('Maya Chen'));
+    expect(header).not.toHaveTextContent('Report m1');
+  });
+
   it('shows the report-not-locked state for a Draft commit', async () => {
     server.use(http.get('*/commits/c1', () => HttpResponse.json(commit('DRAFT'))));
     render(withStore(<ReviewDetail commitId="c1" onBack={noop} />));

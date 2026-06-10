@@ -9,14 +9,18 @@
 // ConfirmDialog before posting. Renders the REPORT-NOT-LOCKED empty state for a Draft commit. Data +
 // the review mutation go through RTK Query (useGetCommitQuery / useReviewCommitMutation); the member's
 // Pulse is read via useGetPulseQuery; the RCDO tree (useGetRcdoTreeQuery, flattened to id→title)
-// resolves each item's real Supporting-Outcome name for its chip.
+// resolves each item's real Supporting-Outcome name for its chip. The report's display name comes
+// from the memberName prop (router state from the queue) or, on a deep link, is resolved from the
+// review-queue row for the commit's week — never the raw member UUID.
 import { useMemo, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
+import { skipToken } from '@reduxjs/toolkit/query';
 import type { CommitItemDto, ReviewState } from '@wcm/types';
 import {
   useGetCommitQuery,
   useGetPulseQuery,
   useGetRcdoTreeQuery,
+  useGetReviewQueueQuery,
   useReviewCommitMutation,
 } from '@wcm/api';
 import {
@@ -73,6 +77,19 @@ export function ReviewDetail({
 }: ReviewDetailProps): JSX.Element {
   const { data, isLoading, isError, refetch } = useGetCommitQuery(commitId);
   const { data: pulse } = useGetPulseQuery(commitId);
+  // Deep link / refresh has no memberName prop: resolve the report's real name from the manager's
+  // review-queue row for this commit's week (a cache hit when arriving from the queue) so the
+  // header never falls back to a raw member UUID.
+  const { data: queuePage } = useGetReviewQueueQuery(
+    !memberName && data ? { weekStart: data.weekStart } : skipToken,
+  );
+  const queueName = useMemo(() => {
+    if (memberName || !data) return undefined;
+    const row = queuePage?.content.find(
+      (r) => r.commitId === data.id || r.memberId === data.memberId,
+    );
+    return row?.memberName;
+  }, [memberName, data, queuePage]);
   // The RCDO tree resolves each linked item's chip to its real Supporting-Outcome name (not a generic
   // placeholder); flatten it to id → title once per tree change.
   const { data: rcdoTree } = useGetRcdoTreeQuery();
@@ -160,7 +177,7 @@ export function ReviewDetail({
     );
   }
 
-  const name = memberName ?? `Report ${data.memberId}`;
+  const name = memberName ?? queueName ?? `Report ${data.memberId}`;
   const unlinked = data.items.filter((i) => !i.supportingOutcomeId).length;
 
   const submitReview = (state: ReviewState): void => {
