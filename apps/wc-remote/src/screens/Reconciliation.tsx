@@ -6,9 +6,10 @@
 // "Will carry forward"; an unplanned/added item renders a "NOT PLANNED" placeholder opposite an amber
 // added card). Collapses to a single column on mobile. The ConfirmDialog → POST carry-forward +
 // markReconciled drives the "Week reconciled" success banner. States: loading skeleton, NOT-YET-LOCKED
-// guard (Draft → back to My Week), in-progress (RECONCILING — per-row status editable), reconciled
-// (read-only success), error. All data + mutations via RTK Query (hooks unchanged); the per-item status
-// PATCH stays debounced (coalesces fast toggles). Preserves the reconciliation data-testids.
+// guard (Draft → back to My Week), LOCKED (the OWNER's "Begin reconciliation" CTA → POST /reconcile,
+// LOCKED→RECONCILING, since item statuses only become editable while RECONCILING), in-progress
+// (RECONCILING — per-row status editable), reconciled (read-only success), error. All data + mutations
+// via RTK Query; the per-item status PATCH stays debounced. Preserves the reconciliation data-testids.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CommitItemStatus,
@@ -20,6 +21,7 @@ import {
   useGetReconciliationQuery,
   useMarkReconciledMutation,
   usePatchItemStatusMutation,
+  useStartReconcileMutation,
 } from '@wcm/api';
 import {
   ChessBadge,
@@ -60,6 +62,7 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
   const { data, isLoading, isError, refetch } = useGetReconciliationQuery(commitId);
   const [patchStatus] = usePatchItemStatusMutation();
   const [markReconciled, reconciledState] = useMarkReconciledMutation();
+  const [startReconcile, startState] = useStartReconcileMutation();
   const [carryForward, carryState] = useCarryForwardMutation();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmCarryOpen, setConfirmCarryOpen] = useState(false);
@@ -157,6 +160,10 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
 
   const editable = data.lifecycleState === 'RECONCILING';
   const reconciled = data.lifecycleState === 'RECONCILED';
+  // LOCKED = submitted but reconciliation not yet started. The OWNER opens it here
+  // (LOCKED→RECONCILING) before item statuses become editable — without this the screen is a
+  // read-only dead end (the "Start reconciliation" button on My Week only navigates here).
+  const locked = data.lifecycleState === 'LOCKED';
   const total = plannedRows.length;
   const completedCount = plannedRows.filter((r) => r.flag === 'COMPLETED').length;
   const incompleteCount = plannedRows.filter((r) => r.flag === 'INCOMPLETE').length;
@@ -234,6 +241,18 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
                 <LifecycleBadge state={data.lifecycleState} />
               </div>
             </div>
+            {locked && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={startState.isLoading}
+                onClick={() => void startReconcile(commitId)}
+                data-testid="recon-begin"
+              >
+                <Icon.scale size={15} />{' '}
+                {startState.isLoading ? 'Opening…' : 'Begin reconciliation'}
+              </button>
+            )}
             {editable && (
               <button
                 type="button"
@@ -245,6 +264,14 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
               </button>
             )}
           </div>
+        </div>
+      )}
+      {locked && (
+        <div
+          data-testid="recon-locked-hint"
+          style={{ fontSize: 13, color: 'var(--ink-low)', margin: '-8px 2px 16px' }}
+        >
+          Your plan is frozen. Begin reconciliation to mark what you actually completed this week.
         </div>
       )}
 

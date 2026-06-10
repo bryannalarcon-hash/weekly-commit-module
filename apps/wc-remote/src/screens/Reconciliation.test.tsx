@@ -52,6 +52,28 @@ describe('Reconciliation', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
+  it('shows a LOCKED week the "Begin reconciliation" CTA, which POSTs the LOCKED→RECONCILING start', async () => {
+    viewReturns({
+      commitId: 'c1',
+      lifecycleState: 'LOCKED',
+      rows: [
+        { commitItemId: 'i1', plannedText: 'Planned task', plannedTier: 'KING', supportingOutcomeId: 's1', actualStatus: null, flag: 'INCOMPLETE' },
+      ],
+    });
+    const startSpy = vi.fn(() => HttpResponse.json({ id: 'c1', items: [] }));
+    server.use(http.post('*/commits/c1/reconcile', startSpy));
+    const user = userEvent.setup();
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    // LOCKED is NOT editable yet: no per-row status select, but a Begin CTA + hint.
+    expect(await screen.findByTestId('recon-begin')).toBeInTheDocument();
+    expect(screen.getByTestId('recon-locked-hint')).toBeInTheDocument();
+    expect(screen.queryByTestId('status-select')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('recon-begin'));
+    await waitFor(() => expect(startSpy).toHaveBeenCalled()); // POST /commits/c1/reconcile
+  });
+
   it('shows the three tinted metric tiles summarizing completion', async () => {
     viewReturns(reconcilingView);
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
