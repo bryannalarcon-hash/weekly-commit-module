@@ -16,10 +16,10 @@ Package root: `com.solovis.wcm`. Frontend: an Nx-shaped `apps/*` + `libs/*` work
 ships as a **Vite Module Federation remote** (`wc-remote`) loaded by a thin `host-shell`.
 
 **Deliverables.** This file is the *TECHNICAL DOCUMENTATION* deliverable. The other four required
-deliverables: *SOURCE CODE* (this repo), *DEMO VIDEO* (recorded walkthrough, submitted with the
-deliverables), *TEST RESULTS* (the
-summarized in [TEST_RESULTS.md](TEST_RESULTS.md), with the
-test command matrix in [README.md](../README.md) + §7 below), and the *AI USAGE LOG*
+deliverables: *SOURCE CODE* (this repo), *DEMO VIDEO*
+([youtu.be/cjq9MU9AO-Q](https://youtu.be/cjq9MU9AO-Q) — ~10-min walkthrough), *TEST RESULTS*
+([TEST_RESULTS.md](TEST_RESULTS.md) + the test command matrix in [README.md](../README.md) + §7
+below), and the *AI USAGE LOG*
 ([AI_USAGE.md](../AI_USAGE.md) — how Claude Code built the module, with usage numbers). The
 [README](../README.md#deliverables) maps each deliverable to its location.
 

@@ -15,7 +15,8 @@ backed by a **Spring Boot 3.3 / Java 21 / PostgreSQL 16.4** API. In production t
 (`wc-remote`) is loaded by the PA host app; here a thin `host-shell` plays that role so the same
 build runs both **standalone** and **host-federated**.
 
-> 🌐 **Live demo:** **http://ec2-44-218-6-116.compute-1.amazonaws.com/** — a single-EC2 deploy in
+> 🎥 **Demo video:** **https://youtu.be/cjq9MU9AO-Q** (~10-min walkthrough)
+> · 🌐 **Live demo:** **http://ec2-44-218-6-116.compute-1.amazonaws.com/** — single-EC2 deploy in
 > hermetic demo mode; pick a persona with `?member=<slug>` (e.g. `?member=priya` = manager). See [Deploy](#deploy).
 
 | Area | Stack |
@@ -34,7 +35,7 @@ build runs both **standalone** and **host-federated**.
 |---|---|
 | **SOURCE CODE** | this repository (`backend/`, `apps/`, `libs/`, `e2e/`, `perf/`) |
 | **TECHNICAL DOCUMENTATION** | [docs/TECHNICAL.md](docs/TECHNICAL.md) |
-| **DEMO VIDEO** | recorded walkthrough, submitted with the deliverables (live app per [Deploy](#deploy)) |
+| **DEMO VIDEO** | **[▶ youtu.be/cjq9MU9AO-Q](https://youtu.be/cjq9MU9AO-Q)** — ~10-min walkthrough (live app per [Deploy](#deploy)) |
 | **TEST RESULTS** | [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md) — inventory, enforced gates & CI artifacts (+ the [command matrix](#test-command-matrix-the-test-results-deliverable) below) |
 | **AI USAGE LOG** | [AI_USAGE.md](AI_USAGE.md) |
 
