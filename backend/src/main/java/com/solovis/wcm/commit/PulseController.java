@@ -1,6 +1,7 @@
 // PulseController — REST surface for the weekly Pulse (U19 thin Pulse), RTK-Query friendly.
-// GET /api/commits/{id}/pulse reads the acting member's reading; PUT upserts it. Ownership + the
-// 1..5 rating bound are enforced in PulseService / the request DTO; errors render as RFC-7807.
+// GET /api/commits/{id}/pulse reads the reading (owner OR the owner's direct manager); PUT upserts
+// it (owner-only, and only while DRAFT/LOCKED/RECONCILING — frozen weeks 409). Authz, the freeze
+// guard and the 1..5 rating bound live in PulseService / the request DTO; errors render RFC-7807.
 package com.solovis.wcm.commit;
 
 import com.solovis.wcm.commit.dto.PulseDto;
@@ -25,13 +26,18 @@ public class PulseController {
     this.service = service;
   }
 
-  @Operation(summary = "Read the acting member's weekly Pulse for this commit (empty when unrated)")
+  @Operation(
+      summary =
+          "Read the weekly Pulse for this commit — owner or the owner's direct manager (empty when"
+              + " unrated)")
   @GetMapping
   public PulseDto get(@PathVariable UUID id) {
     return service.get(id);
   }
 
-  @Operation(summary = "Upsert the acting member's weekly Pulse (rating 1..5)")
+  @Operation(
+      summary =
+          "Upsert the owner's weekly Pulse (rating 1..5); 409 once the week is RECONCILED/frozen")
   @PutMapping
   public PulseDto put(@PathVariable UUID id, @Valid @RequestBody PulseRequest request) {
     return service.put(id, request);
