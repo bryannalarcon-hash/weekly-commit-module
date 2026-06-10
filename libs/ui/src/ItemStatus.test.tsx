@@ -19,7 +19,7 @@ describe('ItemStatus', () => {
       ['incomplete', 'Incomplete'],
       ['carried', 'Carried forward'],
       ['added', 'Added after lock'],
-      ['pending', 'In progress'],
+      ['pending', 'Pending'],
     ];
     for (const [status, label] of cases) {
       const { unmount } = render(<ItemStatus status={status} />);

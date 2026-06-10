@@ -329,6 +329,8 @@ export const handlers = [
     const view: ReconciliationView = {
       commitId: dto.id,
       lifecycleState: dto.lifecycleState,
+      // The mock acts as the OWNER, so the reconcile controls are available.
+      canReconcile: true,
       rows: dto.items.map((i) => ({
         commitItemId: i.id,
         plannedText: i.text,
@@ -340,7 +342,9 @@ export const handlers = [
             ? 'COMPLETED'
             : i.status === 'CARRIED_FORWARD'
               ? 'CARRIED'
-              : 'INCOMPLETE',
+              : i.status === 'INCOMPLETE'
+                ? 'INCOMPLETE'
+                : 'PENDING',
       })),
     };
     return HttpResponse.json(view);

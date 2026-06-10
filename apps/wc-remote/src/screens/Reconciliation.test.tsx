@@ -1,6 +1,8 @@
 // apps/wc-remote/src/screens/Reconciliation.test.tsx — RTL tests for the re-skinned planned-vs-actual
 // view (brief §6.6, U20). MSW-backed, RTK Query real. Covers: the NOT-YET-LOCKED guard (Draft →
-// redirect back), the in-progress (RECONCILING) state with the three tinted metric tiles, per-row
+// redirect back), a LOCKED week's owner Begin CTA + an un-judged item rendering neutral PENDING (Bug
+// 1), a LOCKED report read-only for a non-owner manager (canReconcile=false → recon-readonly-note, no
+// Begin — Bug 2), the in-progress (RECONCILING) state with the three tinted metric tiles, per-row
 // ItemStatus flags + an editable actual-status select, the added-after-lock flag ("NOT PLANNED"
 // placeholder + amber added card), the unified "Carry forward & reconcile" action (confirm dialog →
 // carry-forward + markReconciled mutations), the reconciled read-only success banner, loading
@@ -36,6 +38,7 @@ function viewReturns(view: ReconciliationView): void {
 const reconcilingView: ReconciliationView = {
   commitId: 'c1',
   lifecycleState: 'RECONCILING',
+  canReconcile: true,
   rows: [
     { commitItemId: 'i1', plannedText: 'Planned task', plannedTier: 'KING', supportingOutcomeId: 's1', actualStatus: 'INCOMPLETE', flag: 'INCOMPLETE' },
     { commitItemId: 'i2', plannedText: null, plannedTier: null, supportingOutcomeId: null, actualStatus: 'OPEN', flag: 'ADDED_AFTER_LOCK' },
@@ -44,7 +47,7 @@ const reconcilingView: ReconciliationView = {
 
 describe('Reconciliation', () => {
   it('guards a not-yet-locked (Draft) commit and routes back to my week', async () => {
-    viewReturns({ commitId: 'c1', lifecycleState: 'DRAFT', rows: [] });
+    viewReturns({ commitId: 'c1', lifecycleState: 'DRAFT', canReconcile: true, rows: [] });
     const onBack = vi.fn();
     const user = userEvent.setup();
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={onBack} />));
@@ -56,8 +59,10 @@ describe('Reconciliation', () => {
     viewReturns({
       commitId: 'c1',
       lifecycleState: 'LOCKED',
+      canReconcile: true,
       rows: [
-        { commitItemId: 'i1', plannedText: 'Planned task', plannedTier: 'KING', supportingOutcomeId: 's1', actualStatus: null, flag: 'INCOMPLETE' },
+        // Bug 1: an un-judged item on a just-locked week is PENDING (neutral), NOT pre-flagged red.
+        { commitItemId: 'i1', plannedText: 'Planned task', plannedTier: 'KING', supportingOutcomeId: 's1', actualStatus: null, flag: 'PENDING' },
       ],
     });
     const startSpy = vi.fn(() => HttpResponse.json({ id: 'c1', items: [] }));
@@ -70,8 +75,32 @@ describe('Reconciliation', () => {
     expect(screen.getByTestId('recon-locked-hint')).toBeInTheDocument();
     expect(screen.queryByTestId('status-select')).not.toBeInTheDocument();
 
+    // The un-judged item renders the neutral PENDING pill (not the red Incomplete one) and shows no
+    // "will carry forward" hint.
+    const row = await screen.findByTestId('recon-row');
+    expect(within(row).getByTestId('recon-flag')).toHaveTextContent(/pending/i);
+    expect(within(row).queryByText(/will carry forward/i)).not.toBeInTheDocument();
+
     await user.click(screen.getByTestId('recon-begin'));
     await waitFor(() => expect(startSpy).toHaveBeenCalled()); // POST /commits/c1/reconcile
+  });
+
+  it('renders a LOCKED report read-only for a non-owner (manager): a note, no Begin CTA', async () => {
+    // Bug 2: a manager viewing a not-yet-reconciled report (canReconcile=false) must not see the
+    // owner-only "Begin reconciliation" control — they'd 403 on it. They see a read-only note.
+    viewReturns({
+      commitId: 'c1',
+      lifecycleState: 'LOCKED',
+      canReconcile: false,
+      rows: [
+        { commitItemId: 'i1', plannedText: 'Planned task', plannedTier: 'KING', supportingOutcomeId: 's1', actualStatus: null, flag: 'PENDING' },
+      ],
+    });
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    expect(await screen.findByTestId('recon-readonly-note')).toBeInTheDocument();
+    expect(screen.queryByTestId('recon-begin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('recon-status-select')).not.toBeInTheDocument();
   });
 
   it('shows the three tinted metric tiles summarizing completion', async () => {

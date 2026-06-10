@@ -29,7 +29,7 @@ const STATUS_VISUAL: Record<ItemStatusKey, StatusVisual> = {
   incomplete: { label: 'Incomplete', color: 'var(--red)', dim: 'var(--red-dim)', icon: 'x' },
   carried: { label: 'Carried forward', color: 'var(--violet)', dim: 'var(--violet-dim)', icon: 'carry' },
   added: { label: 'Added after lock', color: 'var(--amber)', dim: 'var(--amber-dim)', icon: 'plus' },
-  pending: { label: 'In progress', color: 'var(--ink-low)', dim: 'var(--surface-2)', icon: 'clock' },
+  pending: { label: 'Pending', color: 'var(--ink-low)', dim: 'var(--surface-2)', icon: 'clock' },
 };
 
 export interface ItemStatusProps {

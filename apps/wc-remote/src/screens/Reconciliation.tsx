@@ -2,14 +2,18 @@
 // §6.6, U20), re-skinned to the WCM c-design (design/.../page-reconcile.jsx). A header (kicker +
 // title + Reconciling LifecycleBadge + a primary "Carry forward & reconcile" action), three tinted
 // Metric tiles (Completion %, Completed n/total, Carrying over), the two-column PLANNED (frozen,
-// locked-tint, ChessBadge) vs ACTUAL (ItemStatus: completed/incomplete/added-after-lock; incomplete →
-// "Will carry forward"; an unplanned/added item renders a "NOT PLANNED" placeholder opposite an amber
-// added card). Collapses to a single column on mobile. The ConfirmDialog → POST carry-forward +
-// markReconciled drives the "Week reconciled" success banner. States: loading skeleton, NOT-YET-LOCKED
-// guard (Draft → back to My Week), LOCKED (the OWNER's "Begin reconciliation" CTA → POST /reconcile,
-// LOCKED→RECONCILING, since item statuses only become editable while RECONCILING), in-progress
-// (RECONCILING — per-row status editable), reconciled (read-only success), error. All data + mutations
-// via RTK Query; the per-item status PATCH stays debounced. Preserves the reconciliation data-testids.
+// locked-tint, ChessBadge) vs ACTUAL (ItemStatus: pending/completed/incomplete/added-after-lock; only
+// an explicitly-marked INCOMPLETE reads red + "Will carry forward", an un-judged item is neutral
+// PENDING; an unplanned/added item renders a "NOT PLANNED" placeholder opposite an amber added card).
+// Collapses to a single column on mobile. The ConfirmDialog → POST carry-forward + markReconciled
+// drives the "Week reconciled" success banner. States: loading skeleton, NOT-YET-LOCKED guard (Draft →
+// back to My Week), LOCKED (the OWNER's "Begin reconciliation" CTA → POST /reconcile, LOCKED→
+// RECONCILING, since item statuses only become editable while RECONCILING), in-progress (RECONCILING —
+// per-row status editable), reconciled (read-only success), error. All owner-only controls
+// (begin/edit/finalize/carry) are gated on the view's canReconcile: a non-owner manager reading the
+// diff sees a fully read-only screen (a "recon-readonly-note" instead of the begin CTA). All data +
+// mutations via RTK Query; the per-item status PATCH stays debounced. Preserves the reconciliation
+// data-testids.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CommitItemStatus,
@@ -38,6 +42,7 @@ import {
 
 /** Map a per-row reconciliation flag onto the ItemStatus pill's presentational key. */
 const FLAG_TO_STATUS: Record<ReconciliationFlag, ItemStatusKey> = {
+  PENDING: 'pending',
   COMPLETED: 'completed',
   INCOMPLETE: 'incomplete',
   CARRIED: 'carried',
@@ -164,8 +169,14 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
   // (LOCKED→RECONCILING) before item statuses become editable — without this the screen is a
   // read-only dead end (the "Start reconciliation" button on My Week only navigates here).
   const locked = data.lifecycleState === 'LOCKED';
+  // Bug 2: only the commit OWNER may drive begin/patch/finalize (the backend 403s anyone else). A
+  // manager viewing their report's diff gets canReconcile=false → every owner-only control is hidden
+  // and the per-row status pills render read-only, even while the week is RECONCILING.
+  const canReconcile = data.canReconcile;
   const total = plannedRows.length;
   const completedCount = plannedRows.filter((r) => r.flag === 'COMPLETED').length;
+  // Bug 1: only an explicitly-marked INCOMPLETE counts as incomplete / carries forward. A PENDING
+  // (un-judged, still-OPEN) row is neutral — it must NOT inflate the carry-over count nor read red.
   const incompleteCount = plannedRows.filter((r) => r.flag === 'INCOMPLETE').length;
   const pct = total > 0 ? Math.round((completedCount / total) * 100) : 0;
   const carriedCount = data.rows.filter((r) => r.flag === 'CARRIED').length;
@@ -217,7 +228,7 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
             {/* Carry-forward is a distinct owner action available once the week is reconciled (the
                 FSM/backend keep it separate from the manager's reconcile). Offer it while there are
                 still-unfinished items to move into next week. */}
-            {incompleteCount > 0 && (
+            {incompleteCount > 0 && canReconcile && (
               <button
                 type="button"
                 className="btn btn-primary"
@@ -241,7 +252,7 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
                 <LifecycleBadge state={data.lifecycleState} />
               </div>
             </div>
-            {locked && (
+            {locked && canReconcile && (
               <button
                 type="button"
                 className="btn btn-primary"
@@ -253,7 +264,17 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
                 {startState.isLoading ? 'Opening…' : 'Begin reconciliation'}
               </button>
             )}
-            {editable && (
+            {/* Bug 2: a non-owner (manager) viewing a not-yet-reconciled report can't begin it — the
+                begin/patch/finalize writes are owner-only (403). Show a read-only note instead. */}
+            {locked && !canReconcile && (
+              <div
+                data-testid="recon-readonly-note"
+                style={{ fontSize: 13, color: 'var(--ink-low)', maxWidth: 280 }}
+              >
+                Awaiting the owner’s reconciliation.
+              </div>
+            )}
+            {editable && canReconcile && (
               <button
                 type="button"
                 className="btn btn-primary"
@@ -325,7 +346,7 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
           <ReconRow
             key={row.commitItemId}
             row={row}
-            editable={editable}
+            editable={editable && canReconcile}
             statusValue={localStatus[row.commitItemId] ?? row.actualStatus ?? 'OPEN'}
             onStatusChange={(status) => queueStatusChange(row.commitItemId, status)}
           />
@@ -335,7 +356,7 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
           <AddedRow
             key={row.commitItemId}
             row={row}
-            editable={editable}
+            editable={editable && canReconcile}
             statusValue={localStatus[row.commitItemId] ?? row.actualStatus ?? 'OPEN'}
             onStatusChange={(status) => queueStatusChange(row.commitItemId, status)}
           />

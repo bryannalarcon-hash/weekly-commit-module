@@ -112,14 +112,18 @@ public class ReconciliationService {
 
   /**
    * GET /commits/{id}/reconciliation — planned (snapshot) vs actual (live status). Joins on
-   * commitItemId; a live item absent from the snapshot is ADDED_AFTER_LOCK. Readable by the OWNER
-   * OR the owner's MANAGER (loadOwnerOrManager) — the manager drives the reconcile lifecycle and
-   * already reads the raw commit/rollup, so denying them the diff for their own report was an authz
-   * gap. The WRITE/transition paths stay strictly OWNER-only or manager-only as before.
+   * commitItemId; a live item absent from the snapshot is ADDED_AFTER_LOCK, an un-judged item is
+   * PENDING. Readable by the OWNER OR the owner's MANAGER (loadOwnerOrManager) — the manager drives
+   * the reconcile lifecycle and already reads the raw commit/rollup, so denying them the diff for
+   * their own report was an authz gap. The WRITE/transition paths stay strictly OWNER-only or
+   * manager-only as before. The view also carries {@code canReconcile} — true only when the acting
+   * member OWNS this commit — so the FE renders the begin/patch/finalize controls for the owner and
+   * a read-only view for a reading manager (who would 403 on any of those writes).
    */
   @Transactional(readOnly = true)
   public ReconciliationView reconciliation(UUID commitId) {
     WeeklyCommit commit = loadOwnerOrManager(commitId);
+    boolean canReconcile = commit.getMemberId().equals(currentMember.currentMemberId());
 
     // No snapshot exists until LOCK. For a pre-LOCK commit (DRAFT) the live items ARE the
     // plan-in-progress, not post-lock additions — joining them against an empty snapshot would
@@ -127,7 +131,7 @@ public class ReconciliationService {
     // not-applicable view instead (still echoing the lifecycle state so the FE's not-yet-locked
     // path can redirect). The diff only makes sense once a frozen plan exists.
     if (snapshots.findByWeeklyCommitId(commitId).isEmpty()) {
-      return new ReconciliationView(commitId, commit.getLifecycleState(), List.of());
+      return new ReconciliationView(commitId, commit.getLifecycleState(), List.of(), canReconcile);
     }
 
     List<CommitItem> liveItems = items.findByWeeklyCommitId(commitId);
@@ -166,7 +170,7 @@ public class ReconciliationService {
                 ReconciliationFlag.ADDED_AFTER_LOCK));
       }
     }
-    return new ReconciliationView(commitId, commit.getLifecycleState(), rows);
+    return new ReconciliationView(commitId, commit.getLifecycleState(), rows, canReconcile);
   }
 
   /**
@@ -222,13 +226,19 @@ public class ReconciliationService {
   // --- internals -------------------------------------------------------------------------------
 
   private static ReconciliationFlag flagFor(CommitItemStatus status) {
+    // An un-judged item (no live row, or still OPEN) is PENDING (neutral), NOT a failure: a LOCKED
+    // or
+    // just-opened RECONCILING week shouldn't paint every item red "Incomplete" before the IC
+    // decides.
+    // Only an explicitly-recorded INCOMPLETE actual reads as Incomplete.
     if (status == null) {
-      return ReconciliationFlag.INCOMPLETE;
+      return ReconciliationFlag.PENDING;
     }
     return switch (status) {
       case COMPLETE -> ReconciliationFlag.COMPLETED;
       case CARRIED_FORWARD -> ReconciliationFlag.CARRIED;
-      case OPEN, INCOMPLETE -> ReconciliationFlag.INCOMPLETE;
+      case INCOMPLETE -> ReconciliationFlag.INCOMPLETE;
+      case OPEN -> ReconciliationFlag.PENDING;
     };
   }
 

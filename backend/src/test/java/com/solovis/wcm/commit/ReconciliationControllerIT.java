@@ -3,12 +3,13 @@
 // IC (OWNER) drives reconciliation end to end: they /reconcile (open), patch item statuses,
 // /reconciled (close), read their own planned-vs-actual diff, and carry forward — all owner-only.
 // Proves: a status patch in RECONCILING -> 200 and persists; a status patch outside RECONCILING ->
-// 409; the GET /reconciliation diff flags an INCOMPLETE planned item and an ADDED_AFTER_LOCK item;
-// the OWNER-driven RECONCILING -> RECONCILED touches NO ManagerReview (the manager reviews
-// separately); a MANAGER attempting /reconcile or /reconciled on a report gets 403; the
-// GET /reconciliation diff is readable by the OWNER and the owner's MANAGER but 403 for an
-// unrelated manager or a peer non-manager (Finding #4/#11); and carry-forward into an already-taken
-// next week is a clean 409, not a 500.
+// 409; the GET /reconciliation diff flags an un-judged (OPEN) planned item PENDING but an
+// explicitly-marked one INCOMPLETE, plus an ADDED_AFTER_LOCK item (Bug 1); the OWNER-driven
+// RECONCILING -> RECONCILED touches NO ManagerReview (the manager reviews separately); a MANAGER
+// attempting /reconcile or /reconciled on a report gets 403; the GET /reconciliation diff is
+// readable by the OWNER (canReconcile=true) and the owner's MANAGER (canReconcile=false, Bug 2) but
+// 403 for an unrelated manager or a peer non-manager (Finding #4/#11); and carry-forward into an
+// already-taken next week is a clean 409, not a 500.
 package com.solovis.wcm.commit;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -191,8 +192,16 @@ class ReconciliationControllerIT extends AbstractWebIT {
                     .build())
             .getId();
 
-    // Owner moves to RECONCILING and marks the planned item INCOMPLETE.
+    // Owner opens reconciliation but hasn't judged the planned item yet (it's still OPEN). Bug 1:
+    // an un-judged item must read PENDING (neutral), NOT pre-flagged INCOMPLETE/red.
     startReconciling(id, owner);
+    mockMvc
+        .perform(get("/api/commits/{id}/reconciliation", id).with(asOwner(owner)))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.rows[?(@.commitItemId=='%s')].flag".formatted(plannedId)).value("PENDING"));
+
+    // Owner now marks the planned item INCOMPLETE — only THEN does it read as Incomplete.
     mockMvc
         .perform(
             patch("/api/commits/{id}/items/{itemId}/status", id, plannedId)
@@ -204,7 +213,7 @@ class ReconciliationControllerIT extends AbstractWebIT {
     mockMvc
         .perform(get("/api/commits/{id}/reconciliation", id).with(asOwner(owner)))
         .andExpect(status().isOk())
-        // The planned item is flagged INCOMPLETE.
+        // The explicitly-marked planned item is flagged INCOMPLETE.
         .andExpect(
             jsonPath("$.rows[?(@.commitItemId=='%s')].flag".formatted(plannedId))
                 .value("INCOMPLETE"))
@@ -225,17 +234,22 @@ class ReconciliationControllerIT extends AbstractWebIT {
     UUID id = createAndLock(owner);
     UUID plannedId = plannedItemId(id);
 
-    // Owner reads their own diff -> 200 with the planned row present.
+    // Owner reads their own diff -> 200 with the planned row present, and canReconcile=true (they
+    // own the commit and may drive begin/patch/finalize).
     mockMvc
         .perform(get("/api/commits/{id}/reconciliation", id).with(asOwner(owner)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.rows[?(@.commitItemId=='%s')]".formatted(plannedId)).exists());
+        .andExpect(jsonPath("$.rows[?(@.commitItemId=='%s')]".formatted(plannedId)).exists())
+        .andExpect(jsonPath("$.canReconcile").value(true));
 
-    // The owner's manager reads the same report's diff -> 200 with the planned row present.
+    // The owner's manager reads the same report's diff -> 200 with the planned row present, but
+    // canReconcile=false: Bug 2 — a non-owner manager would 403 on any reconcile write, so the FE
+    // must render the screen read-only for them.
     mockMvc
         .perform(get("/api/commits/{id}/reconciliation", id).with(asManager(manager)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.rows[?(@.commitItemId=='%s')]".formatted(plannedId)).exists());
+        .andExpect(jsonPath("$.rows[?(@.commitItemId=='%s')]".formatted(plannedId)).exists())
+        .andExpect(jsonPath("$.canReconcile").value(false));
   }
 
   @Test

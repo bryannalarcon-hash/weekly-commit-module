@@ -20,8 +20,10 @@ export type ChessTier = 'KING' | 'QUEEN' | 'ROOK' | 'BISHOP' | 'KNIGHT' | 'PAWN'
 /** Manager-review state (mirrors ReviewState). */
 export type ReviewState = 'UNREVIEWED' | 'INCOMPLETE' | 'REVIEWED';
 
-/** Per-row verdict in the planned-vs-actual diff (mirrors ReconciliationFlag). */
+/** Per-row verdict in the planned-vs-actual diff (mirrors ReconciliationFlag). PENDING = un-judged
+ * (still OPEN / no actual recorded), neutral — NOT a failure. */
 export type ReconciliationFlag =
+  | 'PENDING'
   | 'COMPLETED'
   | 'INCOMPLETE'
   | 'CARRIED'
@@ -94,6 +96,9 @@ export interface ReconciliationView {
   commitId: string;
   lifecycleState: LifecycleState;
   rows: ReconciliationRow[];
+  /** True only when the acting member OWNS this commit and may drive the reconcile transitions
+   * (begin/patch/finalize). False for a reading manager → the FE renders the screen read-only. */
+  canReconcile: boolean;
 }
 
 // --- RCDO DTOs (mirror rcdo/dto/*) ------------------------------------------------------------
