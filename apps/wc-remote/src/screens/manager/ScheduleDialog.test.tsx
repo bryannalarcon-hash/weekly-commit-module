@@ -132,6 +132,20 @@ describe('ScheduleDialog', () => {
     expect(screen.getByTestId('schedule-submit')).toBeEnabled();
   });
 
+  it('renders without crashing when crypto.randomUUID is unavailable (plain-http contexts)', () => {
+    // Insecure contexts (the live demo is served over http://<ip>/) expose crypto WITHOUT
+    // randomUUID — opening the dialog must not crash the micro-frontend (regression).
+    const real = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: real.getRandomValues.bind(real) });
+    try {
+      renderDialog();
+      expect(screen.getByTestId('schedule-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('schedule-subject')).toHaveValue('1:1 — Maya Chen');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('Cancel closes without posting', async () => {
     const scheduleSpy = vi.fn(() => HttpResponse.json({ eventId: 'evt-x' }));
     server.use(http.post('*/integration/outlook/schedule', scheduleSpy));

@@ -61,6 +61,14 @@ describe('WcShell', () => {
     expect(onNavigateManagerSub).toHaveBeenCalledWith('mgr-dashboard');
   });
 
+  it('keeps both nav rows on the scrollable sub-nav class (horizontal swipe on mobile)', () => {
+    // .wc-subnav-inner carries overflow-x: auto (global.css) — the 390px no-clipping guarantee.
+    render(<WcShell active="manager" isManager />);
+    const tabRow = screen.getByTestId('wc-navigation').querySelector(':scope > .wc-subnav-inner');
+    expect(tabRow).toBeInTheDocument();
+    expect(screen.getByTestId('wc-manager-subnav')).toHaveClass('wc-subnav-inner');
+  });
+
   it('renders children inside the page-transition content region', () => {
     const { container } = render(
       <WcShell active="myweek">

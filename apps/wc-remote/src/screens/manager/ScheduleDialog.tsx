@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { useScheduleOutlookEventMutation } from '@wcm/api';
 import { Icon, Scrim } from '@wcm/ui';
+import { safeRandomUUID } from '../../lib/uuid';
 
 export interface ScheduleDialogProps {
   /** The report (direct report) the 1:1 is with — becomes the event's reportMemberId. */
@@ -78,7 +79,8 @@ export function ScheduleDialog({
   const [error, setError] = useState<string | null>(null);
   // One idempotency key per dialog OPEN: a network retry / double-submit of this same form dedups
   // on Graph's side (transactionId), while a fresh open intentionally books a new event.
-  const [clientRequestId] = useState(() => crypto.randomUUID());
+  // safeRandomUUID (NOT crypto.randomUUID) — the latter is missing in non-secure (plain-http) contexts.
+  const [clientRequestId] = useState(() => safeRandomUUID());
 
   const busy = scheduleState.isLoading;
   const valid = subject.trim() !== '' && date !== '' && time !== '';

@@ -314,9 +314,12 @@ export function ReviewQueue({ onOpenReview }: ReviewQueueProps): JSX.Element {
                   }
                 }}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto',
-                  gap: 14,
+                  // Wrapping flex (not grid '1fr auto'): on narrow screens the long status pill
+                  // wraps onto its own line instead of painting over the name block.
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  columnGap: 14,
+                  rowGap: 8,
                   alignItems: 'center',
                   padding: '14px 16px',
                   borderTop: idx ? '1px solid var(--line-soft)' : 'none',
@@ -330,10 +333,21 @@ export function ReviewQueue({ onOpenReview }: ReviewQueueProps): JSX.Element {
                   e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: '1 1 200px' }}>
                   <Avatar name={r.memberName} size={38} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{r.memberName}</div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: 'var(--ink)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {r.memberName}
+                    </div>
                     <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2 }}>
                       Last reviewed —
                       {r.overdue && (
@@ -344,7 +358,7 @@ export function ReviewQueue({ onOpenReview }: ReviewQueueProps): JSX.Element {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18, minWidth: 0, marginLeft: 'auto' }}>
                   <span
                     className="hide-xs tnum mono"
                     data-testid="queue-progress"

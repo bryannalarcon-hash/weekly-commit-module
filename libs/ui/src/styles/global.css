@@ -394,9 +394,12 @@ body {
   padding: 0 26px;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap; /* tabs never wrap — they swipe */
   gap: 4px;
   min-height: 52px;
   overflow-x: auto; /* horizontal scroll on mobile */
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 .wc-subnav-inner::-webkit-scrollbar {
@@ -486,6 +489,33 @@ body {
   }
   .wc-subnav-inner {
     padding: 0 12px;
+  }
+}
+/* Narrow screens: the tab row can overflow (5 tabs + badge at ~390px). Keep it swipe-scrollable,
+   tighten the tab metrics, and paint a right-edge fade as the scroll affordance (the scrollbar is
+   hidden). The trailing inner padding lets the last tab clear the fade at full scroll. */
+@media (max-width: 700px) {
+  .wc-subnav::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 26px;
+    background: linear-gradient(to left, oklch(0.963 0.012 250 / 0.95), oklch(0.963 0.012 250 / 0));
+    pointer-events: none;
+  }
+  .wc-subnav-inner {
+    gap: 2px;
+    padding: 0 28px 0 10px;
+  }
+  .wc-tab {
+    font-size: 12.5px;
+    padding: 15px 9px 13px;
+  }
+  .wc-tab[aria-current='true']::after {
+    left: 9px;
+    right: 9px;
   }
 }
 @media (max-width: 640px) {

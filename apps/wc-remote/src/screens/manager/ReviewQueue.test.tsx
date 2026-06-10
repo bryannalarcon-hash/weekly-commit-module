@@ -152,6 +152,24 @@ describe('ReviewQueue', () => {
     await waitFor(() => expect(seen).toContain(secondWeek));
   });
 
+  it('queue rows wrap on narrow widths instead of overlapping (badge never paints over the name)', async () => {
+    // Layout regression for the 390px overlap: the long "Submitted — awaiting reconciliation"
+    // pill used to paint over the member name. The row must be a wrapping flex container and the
+    // name block must truncate with an ellipsis instead of overflowing under the badge.
+    server.use(http.get('*/review-queue', () => HttpResponse.json(page(rows))));
+    render(withStore(<ReviewQueue onOpenReview={noop} />));
+    const queueRows = await screen.findAllByTestId('queue-row');
+
+    const samRow = queueRows[1]!; // Sam Locked — carries the longest status pill
+    expect(samRow.style.display).toBe('flex');
+    expect(samRow.style.flexWrap).toBe('wrap');
+
+    const name = screen.getByText('Sam Locked');
+    expect(name.style.overflow).toBe('hidden');
+    expect(name.style.textOverflow).toBe('ellipsis');
+    expect(name.style.whiteSpace).toBe('nowrap');
+  });
+
   it('shows the all-caught-up empty state', async () => {
     server.use(http.get('*/review-queue', () => HttpResponse.json(page([]))));
     render(withStore(<ReviewQueue onOpenReview={noop} />));
