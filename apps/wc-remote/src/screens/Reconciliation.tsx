@@ -6,8 +6,12 @@
 // ACTUAL (ItemStatus: pending/completed/incomplete/added-after-lock; only
 // an explicitly-marked INCOMPLETE reads red + "Will carry forward", an un-judged item is neutral
 // PENDING; an unplanned/added item renders a "NOT PLANNED" placeholder opposite an amber added card).
-// Collapses to a single column on mobile. The ConfirmDialog → POST carry-forward + markReconciled
-// drives the "Week reconciled" success banner. States: loading skeleton, NOT-YET-LOCKED guard (Draft →
+// Collapses to a single column on mobile. The ConfirmDialog → POST markReconciled FIRST
+// (RECONCILING→RECONCILED), THEN carry-forward when items are incomplete — the backend FSM only
+// allows carry-forward from RECONCILED/LOCKED (it 409s from RECONCILING). Either mutation's
+// rejection (this dialog or the post-reconcile carry dialog) surfaces a dismissible inline
+// "recon-action-error" note (human message + the server problem `detail`) — never silent. Success
+// drives the "Week reconciled" banner. States: loading skeleton, NOT-YET-LOCKED guard (Draft →
 // back to My Week), LOCKED (the OWNER's "Begin reconciliation" CTA → POST /reconcile, LOCKED→
 // RECONCILING, since item statuses only become editable while RECONCILING), in-progress (RECONCILING —
 // per-row status editable), reconciled (read-only success), error. All owner-only controls
@@ -61,6 +65,28 @@ const STATUS_OPTIONS: { value: CommitItemStatus; label: string }[] = [
   { value: 'CARRIED_FORWARD', label: 'Carried forward' },
 ];
 
+/** Extract the server problem `detail` from an RTK Query rejection, when present. */
+function rejectionDetail(err: unknown): string | null {
+  if (typeof err === 'object' && err !== null && 'data' in err) {
+    const data = (err as { data?: unknown }).data;
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'detail' in data &&
+      typeof (data as { detail?: unknown }).detail === 'string'
+    ) {
+      return (data as { detail: string }).detail;
+    }
+  }
+  return null;
+}
+
+/** Compose the human action-error message, appending the server `detail` when present. */
+function actionErrorMessage(base: string, err: unknown): string {
+  const detail = rejectionDetail(err);
+  return detail ? `${base} ${detail}` : base;
+}
+
 export interface ReconciliationProps {
   commitId: string;
   /** Route back to My Week (used by the not-yet-locked guard + the header back-link). */
@@ -79,6 +105,9 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
   const [carryForward, carryState] = useCarryForwardMutation();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmCarryOpen, setConfirmCarryOpen] = useState(false);
+  // A failed reconcile/carry-forward mutation must be SURFACED (no silent failure): the dialogs'
+  // onConfirm handlers set this and the dismissible error note near the header renders it.
+  const [actionError, setActionError] = useState<string | null>(null);
   // Local optimistic status per item so the control reflects the user's choice immediately while the
   // debounced PATCH + refetch is in flight (otherwise the controlled value snaps back to the server's).
   const [localStatus, setLocalStatus] = useState<Record<string, CommitItemStatus>>({});
@@ -201,6 +230,36 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
       >
         <Icon.chevL size={15} /> My Week
       </button>
+
+      {/* Dismissible action-error note: a rejected reconcile/carry-forward mutation surfaces here
+          (human message + the server problem detail) instead of failing silently. */}
+      {actionError && (
+        <div
+          className="panel"
+          role="alert"
+          data-testid="recon-action-error"
+          style={{
+            padding: '12px 16px',
+            marginBottom: 14,
+            borderLeft: '3px solid var(--red)',
+            background: 'var(--red-dim)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+          }}
+        >
+          <Icon.alert size={17} style={{ color: 'var(--red)', flexShrink: 0, marginTop: 1 }} />
+          <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-mid)' }}>{actionError}</div>
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            onClick={() => setActionError(null)}
+            aria-label="Dismiss error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Header — success banner when reconciled, else the live reconciling header + action. */}
       {reconciled ? (
@@ -384,9 +443,27 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
         busy={carryState.isLoading || reconciledState.isLoading}
         onConfirm={() => {
           void (async () => {
+            setActionError(null);
+            try {
+              // FSM order: mark reconciled FIRST (RECONCILING→RECONCILED) — carry-forward is only
+              // legal from RECONCILED/LOCKED, so firing it while still RECONCILING 409s.
+              await markReconciled(commitId).unwrap();
+            } catch (err) {
+              setActionError(actionErrorMessage('Could not reconcile the week — try again.', err));
+              setConfirmOpen(false);
+              return;
+            }
             try {
               if (incompleteCount > 0) await carryForward(commitId).unwrap();
-              await markReconciled(commitId).unwrap();
+            } catch (err) {
+              // The week IS reconciled (the success banner renders); its "Carry forward" button
+              // remains the retry path — but the failure still surfaces.
+              setActionError(
+                actionErrorMessage(
+                  'Reconciled, but could not carry items forward — use "Carry forward" to retry.',
+                  err,
+                ),
+              );
             } finally {
               setConfirmOpen(false);
             }
@@ -410,8 +487,13 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
         busy={carryState.isLoading}
         onConfirm={() => {
           void (async () => {
+            setActionError(null);
             try {
               await carryForward(commitId).unwrap();
+            } catch (err) {
+              setActionError(
+                actionErrorMessage('Could not carry items forward — try again.', err),
+              );
             } finally {
               setConfirmCarryOpen(false);
             }

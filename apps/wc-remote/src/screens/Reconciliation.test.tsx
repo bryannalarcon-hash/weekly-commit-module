@@ -6,8 +6,9 @@
 // a planned row showing its targeted Supporting Outcome by the RCDO-tree-resolved title (added rows
 // have none), ItemStatus flags + an editable actual-status select, the added-after-lock flag ("NOT PLANNED"
 // placeholder + amber added card), the unified "Carry forward & reconcile" action (confirm dialog →
-// carry-forward + markReconciled mutations), the reconciled read-only success banner, loading
-// skeleton, and error.
+// markReconciled FIRST then carry-forward, asserting request ORDER — the FSM only allows
+// carry-forward from RECONCILED/LOCKED), the dismissible recon-action-error note on a 409 from
+// either dialog, the reconciled read-only success banner, loading skeleton, and error.
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -175,21 +176,79 @@ describe('Reconciliation', () => {
     expect(chips[0]).toHaveTextContent('Normalize public holdings');
   });
 
-  it('fires carry-forward then markReconciled through the unified confirm dialog', async () => {
-    viewReturns(reconcilingView);
-    const carry = vi.fn(() => HttpResponse.json({}));
-    const reconciled = vi.fn(() => HttpResponse.json({}));
-    server.use(http.post('*/commits/c1/carry-forward', carry));
-    server.use(http.post('*/commits/c1/reconciled', reconciled));
+  it('finalizes by POSTing /reconciled BEFORE /carry-forward and lands in the success state', async () => {
+    // FSM regression: carry-forward is only legal from RECONCILED (or LOCKED) — firing it while
+    // still RECONCILING 409s, so the unified dialog must mark reconciled FIRST, then carry forward.
+    const order: string[] = [];
+    let view = reconcilingView;
+    server.use(
+      http.get('*/commits/c1/reconciliation', () => HttpResponse.json(view)),
+      http.post('*/commits/c1/reconciled', () => {
+        order.push('reconciled');
+        view = { ...reconcilingView, lifecycleState: 'RECONCILED' };
+        return HttpResponse.json({});
+      }),
+      http.post('*/commits/c1/carry-forward', () => {
+        order.push('carry-forward');
+        return HttpResponse.json({});
+      }),
+    );
     const user = userEvent.setup();
     render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
 
     // The header "Carry forward & reconcile" action opens the confirm dialog.
     await user.click(await screen.findByTestId('carry-forward'));
     await user.click(await screen.findByTestId('confirm-accept'));
-    // There is an incomplete item, so it carries forward AND marks the week reconciled.
-    await waitFor(() => expect(carry).toHaveBeenCalled());
-    await waitFor(() => expect(reconciled).toHaveBeenCalled());
+    // There is an incomplete item, so BOTH fire — reconciled strictly first.
+    await waitFor(() => expect(order).toEqual(['reconciled', 'carry-forward']));
+    // The refetched view is now RECONCILED → the read-only success banner renders, no error note.
+    expect(await screen.findByTestId('recon-success')).toHaveTextContent(/week reconciled/i);
+    expect(screen.queryByTestId('recon-action-error')).not.toBeInTheDocument();
+  });
+
+  it('surfaces a dismissible error note when the reconcile is rejected (409) — no silent failure', async () => {
+    viewReturns(reconcilingView);
+    const carry = vi.fn(() => HttpResponse.json({}));
+    server.use(
+      http.post('*/commits/c1/reconciled', () =>
+        HttpResponse.json({ detail: 'Cannot reconcile from this state.' }, { status: 409 }),
+      ),
+      http.post('*/commits/c1/carry-forward', carry),
+    );
+    const user = userEvent.setup();
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    await user.click(await screen.findByTestId('carry-forward'));
+    await user.click(await screen.findByTestId('confirm-accept'));
+
+    // The inline error note renders the human message + the server problem detail.
+    const note = await screen.findByTestId('recon-action-error');
+    expect(note).toHaveTextContent(/could not reconcile the week/i);
+    expect(note).toHaveTextContent('Cannot reconcile from this state.');
+    // Reconcile failed first → carry-forward never fired.
+    expect(carry).not.toHaveBeenCalled();
+    // The note is dismissible.
+    await user.click(within(note).getByRole('button', { name: /dismiss/i }));
+    expect(screen.queryByTestId('recon-action-error')).not.toBeInTheDocument();
+  });
+
+  it('surfaces the error note when the post-reconcile carry-forward 409s', async () => {
+    // The success banner's "Carry forward" dialog must also surface its failures.
+    viewReturns({ ...reconcilingView, lifecycleState: 'RECONCILED' });
+    server.use(
+      http.post('*/commits/c1/carry-forward', () =>
+        HttpResponse.json({ detail: 'Already carried forward.' }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    await user.click(await screen.findByTestId('carry-forward'));
+    await user.click(await screen.findByTestId('confirm-accept'));
+
+    const note = await screen.findByTestId('recon-action-error');
+    expect(note).toHaveTextContent(/could not carry/i);
+    expect(note).toHaveTextContent('Already carried forward.');
   });
 
   it('debounces a per-item actual-status change into a single PATCH', async () => {
