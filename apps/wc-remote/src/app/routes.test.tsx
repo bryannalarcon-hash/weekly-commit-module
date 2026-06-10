@@ -4,7 +4,8 @@
 // useNavigate/useParams to the screens' callbacks) actually mounts. Covers the employee routes, the
 // manager-gated routes (queue/detail/dashboard via RequireManager), the manager sub-nav branch in
 // WcShell, and the catch-all redirect. Proves the route map is wired, not just that screens render
-// in isolation.
+// in isolation. (Review Detail → reconciliation navigation lives in routesNavigation.test.tsx, which
+// injects a fresh store per test to avoid the singleton-store cache bleed that data-driven nav needs.)
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { setupServer } from 'msw/node';

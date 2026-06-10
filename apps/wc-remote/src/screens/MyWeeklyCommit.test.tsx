@@ -4,7 +4,8 @@
 // Lock week gated on all-linked + lock-confirm dialog, ValidationSummary, past-due banner, carried
 // section), Locked (frozen read-only items + Start reconciliation + status pills), Reconciling (Open
 // reconciliation nav), loading skeleton, and error. Asserts the shared-primitive testids the new
-// structure renders (week-header, validation-summary, item-status, confirm-dialog).
+// structure renders (week-header, validation-summary, item-status, confirm-dialog) and that a linked
+// item's chip shows the REAL Supporting-Outcome title resolved from the RCDO tree (not a placeholder).
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -12,9 +13,37 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import type { CommitDto } from '@wcm/types';
+import type { CommitDto, RallyCryNode } from '@wcm/types';
 import { handlers, makeStore, resetMockDb } from '@wcm/api';
 import { MyWeeklyCommit } from './MyWeeklyCommit';
+
+// A fixed RCDO tree whose Supporting Outcome `s1` carries a known title, so an item linked to `s1`
+// shows that real name on its chip (not the generic "Linked outcome" placeholder).
+const FIXED_TREE: RallyCryNode[] = [
+  {
+    id: 'rc-1',
+    title: 'Win the quarter',
+    definingObjectives: [
+      {
+        id: 'do-1',
+        title: 'Ship the data platform',
+        outcomes: [
+          {
+            id: 'o-1',
+            title: 'Single source of truth',
+            supportingOutcomes: [
+              { id: 's1', outcomeId: 'o-1', title: 'Normalize public holdings', ownerId: null },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+function treeReturns(tree: RallyCryNode[]): void {
+  server.use(http.get('*/rcdo/tree', () => HttpResponse.json(tree)));
+}
 
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
@@ -147,6 +176,27 @@ describe('MyWeeklyCommit', () => {
     expect(screen.getByTestId('item-status')).toHaveAttribute('data-status', 'completed');
     expect(screen.queryByTestId('edit-continue')).not.toBeInTheDocument();
     expect(screen.queryByTestId('lock-week')).not.toBeInTheDocument();
+  });
+
+  it('shows the resolved Supporting Outcome name on a linked item, and the unlinked chip otherwise', async () => {
+    treeReturns(FIXED_TREE);
+    currentReturns(
+      commit({
+        lifecycleState: 'LOCKED',
+        items: [
+          { id: 'i1', text: 'Linked item', status: 'COMPLETE', supportingOutcomeId: 's1', chessTier: 'ROOK', carriedFromItemId: null },
+          { id: 'i2', text: 'Unlinked item', status: 'OPEN', supportingOutcomeId: null, chessTier: null, carriedFromItemId: null },
+        ],
+      }),
+    );
+    render(withStore(<MyWeeklyCommit onEdit={noop} onReconcile={noop} />));
+
+    // The linked item's chip shows the REAL outcome title from the tree, not the placeholder.
+    expect(await screen.findByText('Normalize public holdings')).toBeInTheDocument();
+    expect(screen.queryByText('Linked outcome')).not.toBeInTheDocument();
+    // The linked item renders the green chip; the unlinked item keeps the amber "needs an outcome" one.
+    expect(screen.getAllByTestId('rcdo-chip')).toHaveLength(1);
+    expect(screen.getByTestId('rcdo-chip-unlinked')).toBeInTheDocument();
   });
 
   it('routes to reconciliation from a Reconciling week via Open reconciliation', async () => {

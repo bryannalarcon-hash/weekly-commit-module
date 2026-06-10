@@ -1,7 +1,8 @@
 // apps/wc-remote/src/screens/manager/ReviewDetail.test.tsx — RTL tests for the re-skinned manager review
 // detail (brief §6.8, U21). MSW-backed, real RTK Query. Covers: the report-not-locked state (Draft →
 // nothing to review), a locked report's header (name + Locked badge + Pulse) and item cards, the
-// mark-reviewed flow (ConfirmDialog → posts a review), the unlinked-strategy amber notice, the inline
+// a linked item card showing its REAL Supporting-Outcome title resolved from the RCDO tree (not a
+// placeholder), the mark-reviewed flow (ConfirmDialog → posts a review), the unlinked-strategy amber notice, the inline
 // per-item comment box (Comment toggle), prev/next navigation callbacks (disabled when no handler),
 // the CB-1 Schedule-1:1 header button (opens the prefilled ScheduleDialog; success note after posting),
 // and an error state.
@@ -12,9 +13,37 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import type { CommitDto, PulseDto } from '@wcm/types';
+import type { CommitDto, PulseDto, RallyCryNode } from '@wcm/types';
 import { handlers, makeStore, resetMockDb } from '@wcm/api';
 import { ReviewDetail } from './ReviewDetail';
+
+// A fixed RCDO tree whose Supporting Outcome `s1` has a known title, so an item linked to `s1` shows
+// that real name on its chip (not the generic "Linked outcome" placeholder).
+const FIXED_TREE: RallyCryNode[] = [
+  {
+    id: 'rc-1',
+    title: 'Win the quarter',
+    definingObjectives: [
+      {
+        id: 'do-1',
+        title: 'Ship the data platform',
+        outcomes: [
+          {
+            id: 'o-1',
+            title: 'Single source of truth',
+            supportingOutcomes: [
+              { id: 's1', outcomeId: 'o-1', title: 'Normalize public holdings', ownerId: null },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+function treeReturns(tree: RallyCryNode[]): void {
+  server.use(http.get('*/rcdo/tree', () => HttpResponse.json(tree)));
+}
 
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
@@ -81,6 +110,18 @@ describe('ReviewDetail', () => {
     // Linked item shows the green RCDO chip, not the unlinked affordance.
     expect(screen.getByTestId('rcdo-chip')).toBeInTheDocument();
     expect(screen.queryByTestId('review-unlinked-notice')).not.toBeInTheDocument();
+  });
+
+  it('shows the resolved Supporting Outcome name on a linked item card (not the placeholder)', async () => {
+    treeReturns(FIXED_TREE);
+    server.use(http.get('*/commits/c1', () => HttpResponse.json(commit('LOCKED'))));
+    render(withStore(<ReviewDetail commitId="c1" onBack={noop} />));
+
+    // The default commit item links to `s1`; its chip resolves to the tree's real title.
+    expect(await screen.findByText('Normalize public holdings')).toBeInTheDocument();
+    expect(screen.queryByText('Linked outcome')).not.toBeInTheDocument();
+    expect(screen.getByTestId('rcdo-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('rcdo-chip-unlinked')).not.toBeInTheDocument();
   });
 
   it('confirms before posting a review on Mark reviewed', async () => {

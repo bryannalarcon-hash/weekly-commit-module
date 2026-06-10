@@ -2,7 +2,8 @@
 // §6.6, U20), re-skinned to the WCM c-design (design/.../page-reconcile.jsx). A header (kicker +
 // title + Reconciling LifecycleBadge + a primary "Carry forward & reconcile" action), three tinted
 // Metric tiles (Completion %, Completed n/total, Carrying over), the two-column PLANNED (frozen,
-// locked-tint, ChessBadge) vs ACTUAL (ItemStatus: pending/completed/incomplete/added-after-lock; only
+// locked-tint, ChessBadge + the targeted Supporting-Outcome RcdoChip resolved from the RCDO tree) vs
+// ACTUAL (ItemStatus: pending/completed/incomplete/added-after-lock; only
 // an explicitly-marked INCOMPLETE reads red + "Will carry forward", an un-judged item is neutral
 // PENDING; an unplanned/added item renders a "NOT PLANNED" placeholder opposite an amber added card).
 // Collapses to a single column on mobile. The ConfirmDialog → POST carry-forward + markReconciled
@@ -12,8 +13,8 @@
 // per-row status editable), reconciled (read-only success), error. All owner-only controls
 // (begin/edit/finalize/carry) are gated on the view's canReconcile: a non-owner manager reading the
 // diff sees a fully read-only screen (a "recon-readonly-note" instead of the begin CTA). All data +
-// mutations via RTK Query; the per-item status PATCH stays debounced. Preserves the reconciliation
-// data-testids.
+// mutations via RTK Query (incl. useGetRcdoTreeQuery, flattened to id→title for the planned chip); the
+// per-item status PATCH stays debounced. Preserves the reconciliation data-testids.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CommitItemStatus,
@@ -27,6 +28,7 @@ import {
   usePatchItemStatusMutation,
   useStartReconcileMutation,
 } from '@wcm/api';
+import { useGetRcdoTreeQuery } from '@wcm/api';
 import {
   ChessBadge,
   ConfirmDialog,
@@ -36,9 +38,11 @@ import {
   ItemStatus,
   LifecycleBadge,
   Metric,
+  RcdoChip,
   Skeleton,
   type ItemStatusKey,
 } from '@wcm/ui';
+import { outcomeTitleById } from '../lib/rcdo';
 
 /** Map a per-row reconciliation flag onto the ItemStatus pill's presentational key. */
 const FLAG_TO_STATUS: Record<ReconciliationFlag, ItemStatusKey> = {
@@ -65,6 +69,10 @@ export interface ReconciliationProps {
 
 export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps): JSX.Element {
   const { data, isLoading, isError, refetch } = useGetReconciliationQuery(commitId);
+  // The RCDO tree lets each planned row show which Supporting Outcome it targeted (resolved name, not
+  // the opaque id); flatten it to id → title once per tree change.
+  const { data: rcdoTree } = useGetRcdoTreeQuery();
+  const titleById = useMemo(() => outcomeTitleById(rcdoTree), [rcdoTree]);
   const [patchStatus] = usePatchItemStatusMutation();
   const [markReconciled, reconciledState] = useMarkReconciledMutation();
   const [startReconcile, startState] = useStartReconcileMutation();
@@ -347,6 +355,11 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
             key={row.commitItemId}
             row={row}
             editable={editable && canReconcile}
+            outcomeTitle={
+              row.supportingOutcomeId
+                ? (titleById.get(row.supportingOutcomeId) ?? 'Linked outcome')
+                : null
+            }
             statusValue={localStatus[row.commitItemId] ?? row.actualStatus ?? 'OPEN'}
             onStatusChange={(status) => queueStatusChange(row.commitItemId, status)}
           />
@@ -415,13 +428,21 @@ export function Reconciliation({ commitId, onBackToWeek }: ReconciliationProps):
 interface ReconRowProps {
   row: ReconciliationRow;
   editable: boolean;
+  /** Resolved Supporting-Outcome title for the planned side (null when unlinked / not applicable). */
+  outcomeTitle?: string | null;
   /** The status control's controlled value (local optimistic choice, else the server's actual). */
   statusValue: CommitItemStatus;
   onStatusChange: (status: CommitItemStatus) => void;
 }
 
 /** One planned-vs-actual comparison pair: a frozen PLANNED cell + the live ACTUAL cell. */
-function ReconRow({ row, editable, statusValue, onStatusChange }: ReconRowProps): JSX.Element {
+function ReconRow({
+  row,
+  editable,
+  outcomeTitle,
+  statusValue,
+  onStatusChange,
+}: ReconRowProps): JSX.Element {
   const status = FLAG_TO_STATUS[row.flag];
   const incomplete = row.flag === 'INCOMPLETE';
   const actualBg = incomplete ? 'var(--red-dim)' : 'var(--surface-1)';
@@ -449,6 +470,12 @@ function ReconRow({ row, editable, statusValue, onStatusChange }: ReconRowProps)
           )}
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{row.plannedText}</div>
+            {/* Which Supporting Outcome this planned item targeted (resolved name via the RCDO tree). */}
+            {outcomeTitle && (
+              <div style={{ marginTop: 7 }}>
+                <RcdoChip title={outcomeTitle} />
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -107,7 +107,11 @@ function ReviewDetailRoute(): JSX.Element {
   const nav = useNavigate();
   return (
     <RequireManager>
-      <ReviewDetail commitId={commitId} onBack={() => nav('/manager')} />
+      <ReviewDetail
+        commitId={commitId}
+        onBack={() => nav('/manager')}
+        onReconcile={() => nav(`/reconcile/${commitId}`)}
+      />
     </RequireManager>
   );
 }

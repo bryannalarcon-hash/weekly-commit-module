@@ -3,7 +3,8 @@
 // redirect back), a LOCKED week's owner Begin CTA + an un-judged item rendering neutral PENDING (Bug
 // 1), a LOCKED report read-only for a non-owner manager (canReconcile=false → recon-readonly-note, no
 // Begin — Bug 2), the in-progress (RECONCILING) state with the three tinted metric tiles, per-row
-// ItemStatus flags + an editable actual-status select, the added-after-lock flag ("NOT PLANNED"
+// a planned row showing its targeted Supporting Outcome by the RCDO-tree-resolved title (added rows
+// have none), ItemStatus flags + an editable actual-status select, the added-after-lock flag ("NOT PLANNED"
 // placeholder + amber added card), the unified "Carry forward & reconcile" action (confirm dialog →
 // carry-forward + markReconciled mutations), the reconciled read-only success banner, loading
 // skeleton, and error.
@@ -14,9 +15,37 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import type { ReconciliationView } from '@wcm/types';
+import type { RallyCryNode, ReconciliationView } from '@wcm/types';
 import { handlers, makeStore, resetMockDb } from '@wcm/api';
 import { Reconciliation } from './Reconciliation';
+
+// A fixed RCDO tree whose Supporting Outcome `s1` has a known title, so a planned row targeting `s1`
+// shows that real name on its chip (not the opaque id or a placeholder).
+const FIXED_TREE: RallyCryNode[] = [
+  {
+    id: 'rc-1',
+    title: 'Win the quarter',
+    definingObjectives: [
+      {
+        id: 'do-1',
+        title: 'Ship the data platform',
+        outcomes: [
+          {
+            id: 'o-1',
+            title: 'Single source of truth',
+            supportingOutcomes: [
+              { id: 's1', outcomeId: 'o-1', title: 'Normalize public holdings', ownerId: null },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+function treeReturns(tree: RallyCryNode[]): void {
+  server.use(http.get('*/rcdo/tree', () => HttpResponse.json(tree)));
+}
 
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
@@ -132,6 +161,18 @@ describe('Reconciliation', () => {
     expect(screen.getByText('NOT PLANNED')).toBeInTheDocument();
     // Status is editable in RECONCILING.
     expect(within(planned).getByTestId('recon-status-select')).toBeInTheDocument();
+  });
+
+  it('shows the planned row\'s targeted Supporting Outcome by its resolved title', async () => {
+    treeReturns(FIXED_TREE);
+    viewReturns(reconcilingView);
+    render(withStore(<Reconciliation commitId="c1" onBackToWeek={noop} />));
+
+    // The planned row targets `s1` → its chip resolves to the tree's real title under the PLANNED side.
+    expect(await screen.findByText('Normalize public holdings')).toBeInTheDocument();
+    const chips = screen.getAllByTestId('rcdo-chip');
+    expect(chips).toHaveLength(1); // only the planned row has an outcome; the added-after-lock row has none
+    expect(chips[0]).toHaveTextContent('Normalize public holdings');
   });
 
   it('fires carry-forward then markReconciled through the unified confirm dialog', async () => {

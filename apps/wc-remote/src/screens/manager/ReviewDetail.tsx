@@ -8,11 +8,17 @@
 // Comment/Flag/Mark-reviewed actions with an inline comment textarea). "Mark reviewed" opens a
 // ConfirmDialog before posting. Renders the REPORT-NOT-LOCKED empty state for a Draft commit. Data +
 // the review mutation go through RTK Query (useGetCommitQuery / useReviewCommitMutation); the member's
-// Pulse is read via useGetPulseQuery.
-import { useState } from 'react';
+// Pulse is read via useGetPulseQuery; the RCDO tree (useGetRcdoTreeQuery, flattened to id→title)
+// resolves each item's real Supporting-Outcome name for its chip.
+import { useMemo, useState } from 'react';
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import type { CommitItemDto, ReviewState } from '@wcm/types';
-import { useGetCommitQuery, useGetPulseQuery, useReviewCommitMutation } from '@wcm/api';
+import {
+  useGetCommitQuery,
+  useGetPulseQuery,
+  useGetRcdoTreeQuery,
+  useReviewCommitMutation,
+} from '@wcm/api';
 import {
   Avatar,
   ChessBadge,
@@ -25,6 +31,7 @@ import {
   Skeleton,
 } from '@wcm/ui';
 import { completedCount, formatProgress, formatWeekRange } from '../../lib/week';
+import { outcomeTitleById } from '../../lib/rcdo';
 import { ScheduleDialog } from './ScheduleDialog';
 
 export interface ReviewDetailProps {
@@ -66,6 +73,10 @@ export function ReviewDetail({
 }: ReviewDetailProps): JSX.Element {
   const { data, isLoading, isError, refetch } = useGetCommitQuery(commitId);
   const { data: pulse } = useGetPulseQuery(commitId);
+  // The RCDO tree resolves each linked item's chip to its real Supporting-Outcome name (not a generic
+  // placeholder); flatten it to id → title once per tree change.
+  const { data: rcdoTree } = useGetRcdoTreeQuery();
+  const titleById = useMemo(() => outcomeTitleById(rcdoTree), [rcdoTree]);
   const [reviewCommit, reviewState] = useReviewCommitMutation();
   // Per-item local review affordances (manager scratch state, not yet persisted per-item).
   const [openComment, setOpenComment] = useState<string | null>(null);
@@ -312,7 +323,13 @@ export function ReviewDetail({
                     )}
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <RcdoChip title={item.supportingOutcomeId ? 'Linked outcome' : null} />
+                    <RcdoChip
+                      title={
+                        item.supportingOutcomeId
+                          ? (titleById.get(item.supportingOutcomeId) ?? 'Linked outcome')
+                          : null
+                      }
+                    />
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4, flex: 'none' }}>

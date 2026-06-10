@@ -5,16 +5,18 @@
 // week[disabled until all items linked → confirm], autosave + "N items · X/Y linked", PastDueBanner,
 // ValidationSummary, CarriedForwardCard section, read-mode CommitItemRow list, thin read-only Pulse),
 // LOCKED/RECONCILING/RECONCILED (frozen read-only list + Start/Open reconciliation), ERROR (retry).
-// Data via RTK Query ONLY (useGetCurrentWeekQuery/useCreateCommitMutation/useGetPulseQuery — unchanged);
+// Data via RTK Query ONLY (useGetCurrentWeekQuery/useCreateCommitMutation/useGetPulseQuery +
+// useGetRcdoTreeQuery, flattened to id→title so each item card shows its real Supporting-Outcome name);
 // the Lock confirm routes to the composer, which owns the actual lock mutation + autosave flush.
 // Preserves testids: my-week, start-week, edit-continue, open-reconcile, past-due-banner, carried-block,
 // lifecycle-badge (+ adds lock-week / lock-confirm via the shared primitives' own testids).
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { CommitDto, CommitItemDto, PulseDto } from '@wcm/types';
 import {
   useCreateCommitMutation,
   useGetCurrentWeekQuery,
   useGetPulseQuery,
+  useGetRcdoTreeQuery,
 } from '@wcm/api';
 import {
   CarriedForwardCard,
@@ -34,6 +36,7 @@ import {
   AutosaveIndicator,
 } from '@wcm/ui';
 import { formatWeekRange, isPastDue, parseIsoDate } from '../lib/week';
+import { outcomeTitleById } from '../lib/rcdo';
 
 export interface MyWeeklyCommitProps {
   /** Route to the composer for a (draft) commit. */
@@ -150,6 +153,10 @@ interface WeekSummaryViewProps {
 /** The populated view, switched by lifecycle state. */
 function WeekSummaryView({ commit, onEdit, onReconcile }: WeekSummaryViewProps): JSX.Element {
   const { data: pulse } = useGetPulseQuery(commit.id);
+  // The RCDO tree lets each linked item's chip show its real Supporting-Outcome name (not a generic
+  // placeholder); flatten it to id → title once per tree change.
+  const { data: rcdoTree } = useGetRcdoTreeQuery();
+  const titleById = useMemo(() => outcomeTitleById(rcdoTree), [rcdoTree]);
   const [confirmLock, setConfirmLock] = useState(false);
 
   const state = commit.lifecycleState;
@@ -295,7 +302,11 @@ function WeekSummaryView({ commit, onEdit, onReconcile }: WeekSummaryViewProps):
             id={item.id}
             text={item.text}
             tier={item.chessTier}
-            outcomeTitle={item.supportingOutcomeId ? 'Linked outcome' : null}
+            outcomeTitle={
+              item.supportingOutcomeId
+                ? (titleById.get(item.supportingOutcomeId) ?? 'Linked outcome')
+                : null
+            }
             right={!isDraft ? <ItemStatus status={statusKey(item.status)} /> : null}
           />
         ))}
