@@ -113,6 +113,12 @@ public class OutlookService {
   /** POST /integration/outlook/connect — the signed-state Entra authorize URL to redirect to. */
   @Transactional(readOnly = true)
   public OutlookConnectResponse connect() {
+    if (!props.isConfigured()) {
+      // No Entra/Graph config on this host (e.g. the demo deploy) — refuse with a clear 409 instead
+      // of handing back an authorize URL with an empty client_id that dead-ends on a Microsoft
+      // error.
+      throw new IllegalCommitStateException("Outlook is not configured on this server");
+    }
     UUID memberId = currentMember.currentMemberId();
     String state = consentState.issue(memberId);
     String url =
@@ -209,7 +215,8 @@ public class OutlookService {
         connected ? OutlookConnectionDto.CONNECTED : OutlookConnectionDto.DISCONNECTED,
         connected ? member.getEmail() : null,
         pref == null ? null : pref.getLastSyncAt(),
-        createEventOnLock);
+        createEventOnLock,
+        props.isConfigured());
   }
 
   private static String enc(String s) {

@@ -393,7 +393,14 @@ function IntegrationsTab({ onRedirect }: { onRedirect: (url: string) => void }):
             </div>
           </div>
           <div>
-            {connected ? (
+            {!data.available && !connected ? (
+              <span
+                data-testid="outlook-unavailable"
+                style={{ fontSize: 12.5, color: 'var(--ink-low)', maxWidth: 240, display: 'inline-block', textAlign: 'right' }}
+              >
+                Outlook isn’t enabled on this host.
+              </span>
+            ) : connected ? (
               <button
                 type="button"
                 className="btn btn-ghost"

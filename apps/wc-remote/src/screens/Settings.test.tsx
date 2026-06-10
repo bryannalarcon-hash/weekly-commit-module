@@ -51,12 +51,14 @@ const disconnected: OutlookConnectionDto = {
   account: null,
   lastSyncAt: null,
   createEventOnLock: true,
+  available: true,
 };
 const connected: OutlookConnectionDto = {
   status: 'CONNECTED',
   account: 'ada@solovis.com',
   lastSyncAt: '2026-06-08T09:00:00Z',
   createEventOnLock: true,
+  available: true,
 };
 
 /** Route an Outlook GET to a fixed connection state for the Integrations tab. */

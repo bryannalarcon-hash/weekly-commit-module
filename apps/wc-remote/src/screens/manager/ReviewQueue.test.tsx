@@ -52,8 +52,23 @@ describe('ReviewQueue', () => {
     expect(badges[1]).toHaveAttribute('data-status', 'overdue');
     expect(screen.getByTestId('queue-overdue')).toBeInTheDocument();
 
-    // Done count comes straight from completed/item counts.
-    expect(screen.getByText('2/4 done')).toBeInTheDocument();
+    // A LOCKED (submitted, not-yet-reconciled) week shows its PLANNED item count — not "0/N done".
+    // Completion only renders once the week is reconciled (see the dedicated test below).
+    expect(screen.getByText('4 items')).toBeInTheDocument();
+  });
+
+  it('shows "X/Y done" only for reconciled weeks, and the planned count otherwise', async () => {
+    const mixed: ReviewQueueRow[] = [
+      { memberId: 'r', memberName: 'Rae Reconciled', commitId: 'c-r', lifecycleState: 'RECONCILED', overdue: false, itemCount: 3, completedCount: 2, reviewState: 'REVIEWED' },
+      { memberId: 's', memberName: 'Sam Submitted', commitId: 'c-s', lifecycleState: 'LOCKED', overdue: false, itemCount: 2, completedCount: 0, reviewState: 'UNREVIEWED' },
+    ];
+    server.use(http.get('*/review-queue', () => HttpResponse.json(page(mixed))));
+    render(withStore(<ReviewQueue onOpenReview={noop} />));
+    await screen.findAllByTestId('queue-row');
+
+    expect(screen.getByText('2/3 done')).toBeInTheDocument(); // reconciled → completion
+    expect(screen.getByText('2 items')).toBeInTheDocument(); // submitted/locked → planned count, NOT "0/2 done"
+    expect(screen.queryByText('0/2 done')).not.toBeInTheDocument();
   });
 
   it('shows live filter-chip counts over the unfiltered set', async () => {

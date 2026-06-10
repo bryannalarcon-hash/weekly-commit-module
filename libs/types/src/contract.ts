@@ -227,6 +227,9 @@ export interface OutlookConnectionDto {
   lastSyncAt: string | null;
   /** Whether locking a week creates a calendar event for it. */
   createEventOnLock: boolean;
+  /** Whether the server has Entra/Graph configured (false on a demo host with no AZURE_* env) — when
+   *  false the UI hides "Connect" and explains, instead of dead-ending on a Microsoft error page. */
+  available: boolean;
 }
 
 /** Body of PUT /api/integration/outlook/settings (mirrors OutlookSettingsRequest). */

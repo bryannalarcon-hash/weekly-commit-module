@@ -49,6 +49,20 @@ function needsReview(r: ReviewQueueRow): boolean {
   return r.lifecycleState === 'LOCKED' && r.reviewState !== 'REVIEWED';
 }
 
+/**
+ * Item-completion ("X/Y done") is only meaningful once a week is reconciled — that is when actuals
+ * are recorded. A DRAFT or LOCKED (submitted, not-yet-reconciled) week has 0 completed items by
+ * definition, so showing "0/Y done" reads as failure when the worker has simply planned Y items and
+ * the week isn't over. For those, show the planned item count instead.
+ */
+function progressLabel(r: ReviewQueueRow): string {
+  if (!r.itemCount) return '—';
+  const reconciled =
+    r.lifecycleState === 'RECONCILED' || r.lifecycleState === 'RECONCILING';
+  if (reconciled) return `${r.completedCount}/${r.itemCount} done`;
+  return `${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'}`;
+}
+
 const SUB_VISUAL: Record<SubmissionStatus, { label: string; color: string; dim: string; icon: string }> = {
   submitted: { label: 'Submitted', color: 'var(--cyan)', dim: 'var(--cyan-dim)', icon: 'lock' },
   draft: { label: 'Draft', color: 'var(--slate)', dim: 'var(--slate-dim)', icon: 'pencil' },
@@ -327,7 +341,7 @@ export function ReviewQueue({ onOpenReview }: ReviewQueueProps): JSX.Element {
                     data-testid="queue-progress"
                     style={{ fontSize: 12, color: 'var(--ink-mid)', width: 96, textAlign: 'right' }}
                   >
-                    {r.itemCount ? `${r.completedCount}/${r.itemCount} done` : '—'}
+                    {progressLabel(r)}
                   </span>
                   <span
                     className="hide-xs tnum mono"

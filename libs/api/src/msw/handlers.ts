@@ -63,6 +63,7 @@ let outlook: OutlookConnectionDto = {
   account: null,
   lastSyncAt: null,
   createEventOnLock: true,
+  available: true,
 };
 
 /** Default account profile for the acting member (Settings → Account). */
@@ -94,6 +95,7 @@ export function resetMockDb(): void {
     account: null,
     lastSyncAt: null,
     createEventOnLock: true,
+    available: true,
   };
   account = defaultAccount();
   notifications = defaultNotifications();
@@ -621,6 +623,7 @@ export const handlers = [
       account: null,
       lastSyncAt: null,
       createEventOnLock: outlook.createEventOnLock,
+      available: true,
     };
     return HttpResponse.json(outlook);
   }),
@@ -675,6 +678,7 @@ export function __setMockOutlookConnected(account = 'ada@solovis.com'): void {
     account,
     lastSyncAt: new Date().toISOString(),
     createEventOnLock: outlook.createEventOnLock,
+    available: true,
   };
 }
 
