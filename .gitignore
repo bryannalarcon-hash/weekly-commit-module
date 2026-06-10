@@ -53,9 +53,18 @@ coverage/
 **/coverage/
 perf/k6-summary.json
 
-# Internal planning docs — kept local (like research/design); deliverable docs go in README/docs/TECHNICAL.md
+# Internal planning / process docs — kept local (like research/design); deliverable docs go in README/docs/TECHNICAL.md
 docs/plans/
 docs/planning/
+docs/change-board.md
+
+# Demo / interview scripts — working artifacts (the recorded video is the deliverable), kept local
+docs/DEMO_SCRIPT.md
+docs/DEMO_SCRIPT_R2.md
+
+# Generated learning-site app — a creation artifact built from docs/layers/; not a deliverable
+# and not needed to build or deploy WCM (also excluded from the Docker build via .dockerignore)
+docs/learn-site/
 
 # Secrets — never commit real env files (Auth0/Azure/AWS); keep .env.example only
 .env

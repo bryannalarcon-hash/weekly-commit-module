@@ -16,7 +16,9 @@ Package root: `com.solovis.wcm`. Frontend: an Nx-shaped `apps/*` + `libs/*` work
 ships as a **Vite Module Federation remote** (`wc-remote`) loaded by a thin `host-shell`.
 
 **Deliverables.** This file is the *TECHNICAL DOCUMENTATION* deliverable. The other four required
-deliverables: *SOURCE CODE* (this repo), *DEMO VIDEO* (`docs/DEMO_SCRIPT.md`), *TEST RESULTS* (the
+deliverables: *SOURCE CODE* (this repo), *DEMO VIDEO* (recorded walkthrough, submitted with the
+deliverables), *TEST RESULTS* (the
+summarized in [TEST_RESULTS.md](TEST_RESULTS.md), with the
 test command matrix in [README.md](../README.md) + §7 below), and the *AI USAGE LOG*
 ([AI_USAGE.md](../AI_USAGE.md) — how Claude Code built the module, with usage numbers). The
 [README](../README.md#deliverables) maps each deliverable to its location.
@@ -291,7 +293,7 @@ Brief = `assignment_description.md`.
 | **No SSR (Next/Remix); client-side SPA** (Off-Limits) | Satisfied — Vite SPA remote; no SSR framework. |
 | **Lombok @Getter/@Setter/@Builder (not @Data)** (Off-Limits) | Satisfied — entities use the explicit annotations; no `@Data`. |
 | **Outlook Graph API integration** (Tech) | Satisfied — delegated `/me/events` via `CalendarSyncPort`/`GraphCalendarAdapter` + consent flow + encrypted token store. |
-| **AWS — EKS, CloudFront, S3, SQS/SNS** (Cloud) | **Partially satisfied / deviated** — the SNS→SQS event seam is built and abstracted (`EventPublisher`, `aws` profile, LocalStack tests); EKS/S3/CloudFront provisioning is design + runbook only, gated on AWS creds + cost approval (Deployment §, Issues). |
+| **AWS — EKS, CloudFront, S3, SQS/SNS** (Cloud) | **Satisfied (single-host) / deviated (cloud-native)** — deployed and **live on AWS EC2** at `http://ec2-44-218-6-116.compute-1.amazonaws.com/` (Docker Compose; `deploy/`). The SNS→SQS event seam is built and abstracted (`EventPublisher`, `aws` profile, LocalStack tests); the heavier **EKS/S3/CloudFront** topology is design + runbook only, gated on cost approval (Deployment §). |
 | **Yarn Workspaces + Nx** (Tech) | **Deviated** — npm workspaces (not Yarn) with the same `apps/*`+`libs/*` layout; Nx kept for the task graph. PRD line 77 says PA's package manager need not be replicated. |
 
 **JaCoCo exclusions rationale.** The 80% bar excludes `WcmApplication`, `*Config*`,
@@ -358,17 +360,24 @@ bash perf/run-stress.sh                                                         
 
 ## 9. Deployment & runbook
 
-**Targets.** Backend container → ECR/EKS (multi-stage JRE-21 image, `/actuator/health` readiness/
-liveness); **RDS PostgreSQL 16.4**; frontend (`host-shell` + `wc-remote`'s `remoteEntry.js`) → S3 +
-CloudFront with CORS + cache headers; **SNS topic + SQS queue + DLQ** for the event seam; Auth0/Graph/
-DB secrets in Secrets Manager/SSM. The event seam flips from in-process to SNS→SQS purely by
-activating the `aws` Spring profile and setting `WCM_SNS_TOPIC_ARN`/`WCM_SQS_QUEUE_URL`.
+**Live deployment (current).** The module is deployed and reachable at
+**http://ec2-44-218-6-116.compute-1.amazonaws.com/** — a single **AWS EC2 `t3.small`** running
+PostgreSQL 16.4 + the Spring backend + an nginx-served federated frontend (`host-shell` + the
+`/remote/` `remoteEntry.js`) via `docker compose`, behind an Elastic IP. The public host runs the
+hermetic **`demo,e2e`** profile (the `X-Debug-Member` persona seam + CB-2 switcher), so it needs no
+Auth0 tenant; pick a persona with `?member=<slug>` (e.g. `?member=priya` = manager, `?member=diego`
+= IC). The image build + the `provision-ec2.sh` → `ship-to-ec2.sh` → `teardown-ec2.sh` lifecycle and
+the full runbook live in [`deploy/`](../deploy/README.md); images stream over SSH (no ECR), so a
+redeploy is one `ship-to-ec2.sh`, and `teardown-ec2.sh` stops the ~$15/mo charge.
+
+**Cloud-native scale-up (design, not provisioned).** The heavier path is a profile/IaC swap, not a
+rewrite: backend container → ECR/EKS (multi-stage JRE-21 image, `/actuator/health` readiness/
+liveness); **RDS PostgreSQL 16.4**; the federated FE → S3 + CloudFront (CORS + cache headers); **SNS
+topic + SQS queue + DLQ** for the event seam (flips from in-process to SNS→SQS by activating the `aws`
+profile + `WCM_SNS_TOPIC_ARN`/`WCM_SQS_QUEUE_URL`); secrets in Secrets Manager/SSM. This topology is
+intentionally **not** provisioned (cost), but the SNS→SQS seam is built and LocalStack-tested.
 
 **Local equivalent (always available).** `docker compose up -d postgres` + the backend under
 `e2e,demo` + the federated FE is the full product locally; LocalStack-backed tests prove the SNS→SQS
-path offline.
-
-**Gating.** Real provisioning (`cdk deploy`/EKS spin-up) needs AWS credentials **and** explicit cost
-approval; it is intentionally not executed by the default CI. The CI `live` job runs the U32 real-
-integration suite (real Auth0 / Graph / deployed AWS) only when the corresponding secrets are present,
-and is required-green before "done."
+path offline. The CI `live` job runs the real-integration suite (real Auth0 / Graph) only when the
+corresponding secrets are present.

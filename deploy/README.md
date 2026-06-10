@@ -9,6 +9,10 @@ A self-contained demo of the Weekly Commit Module on **one EC2 `t3.small`**: Pos
 backend + an nginx-served federated frontend, all via `docker compose`, reachable on `:80` through an
 Elastic IP. Chosen for a cheap (~$15/mo, free-tier eligible), fast, fully-reversible demo.
 
+> **Currently live:** **http://ec2-44-218-6-116.compute-1.amazonaws.com/** — pick a persona with
+> `?member=<slug>` (e.g. `?member=priya` = manager, `?member=diego` = IC), or use the in-app switcher
+> pill. Run `bash deploy/teardown-ec2.sh` to stop the instance and the charge.
+
 ## What runs
 
 | Container | Image | Role |

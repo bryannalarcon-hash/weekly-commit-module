@@ -10,10 +10,13 @@ weekly commitment maps to a **Supporting Outcome** in the **RCDO** hierarchy (Ra
 Objective → Outcome → Supporting Outcome), runs a full server-enforced weekly lifecycle, and gives
 managers a real-time team roll-up of strategic alignment.
 
-It is built as a **Vite 5 Module Federation remote** (React 18, in an Nx + Yarn-Workspaces-shaped
-monorepo) backed by a **Spring Boot 3.3 / Java 21 / PostgreSQL 16.4** API. In production the remote
+It is built as a **Vite 5 Module Federation remote** (React 18, in an Nx + npm-workspaces monorepo)
+backed by a **Spring Boot 3.3 / Java 21 / PostgreSQL 16.4** API. In production the remote
 (`wc-remote`) is loaded by the PA host app; here a thin `host-shell` plays that role so the same
 build runs both **standalone** and **host-federated**.
+
+> 🌐 **Live demo:** **http://ec2-44-218-6-116.compute-1.amazonaws.com/** — a single-EC2 deploy in
+> hermetic demo mode; pick a persona with `?member=<slug>` (e.g. `?member=priya` = manager). See [Deploy](#deploy).
 
 | Area | Stack |
 |------|-------|
@@ -31,8 +34,8 @@ build runs both **standalone** and **host-federated**.
 |---|---|
 | **SOURCE CODE** | this repository (`backend/`, `apps/`, `libs/`, `e2e/`, `perf/`) |
 | **TECHNICAL DOCUMENTATION** | [docs/TECHNICAL.md](docs/TECHNICAL.md) |
-| **DEMO VIDEO** | script in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) |
-| **TEST RESULTS** | the [test command matrix](#test-command-matrix-the-test-results-deliverable) below |
+| **DEMO VIDEO** | recorded walkthrough, submitted with the deliverables (live app per [Deploy](#deploy)) |
+| **TEST RESULTS** | [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md) — inventory, enforced gates & CI artifacts (+ the [command matrix](#test-command-matrix-the-test-results-deliverable) below) |
 | **AI USAGE LOG** | [AI_USAGE.md](AI_USAGE.md) |
 
 ---
@@ -86,10 +89,11 @@ weekly-commit-module/
 │   ├── types/            # shared TS contract types (DTOs, error shapes)
 │   └── ui/               # shared primitives (lifecycle badge, RCDO chip, state primitives, sub-nav)
 ├── backend/              # Spring Boot 3.3 (Java 21, Maven) — com.solovis.wcm.{common,member,rcdo,commit,review,integration,event}
-│   └── src/main/resources/db/migration/   # Flyway V1…V8
+│   └── src/main/resources/db/migration/   # Flyway V1…V10
 ├── e2e/                  # Cypress + Cucumber/Gherkin features + Playwright smoke + run-e2e.sh
 ├── perf/                 # k6 stress script + run-stress.sh (the <200ms read NFR check)
-├── docs/                 # TECHNICAL.md, DEMO_SCRIPT.md, planning/, setup/
+├── deploy/               # single-host AWS EC2 deploy — Dockerfiles, compose, nginx, provision/ship/teardown
+├── docs/                 # TECHNICAL.md, openapi.yaml, layers/ (per-layer deep dives), setup/
 ├── docker-compose.yml    # PostgreSQL 16.4
 ├── .env.example          # copy to .env and fill in Auth0 / Graph / DB values
 └── .github/workflows/ci.yml
@@ -101,8 +105,8 @@ weekly-commit-module/
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| **JDK** | **21** (Temurin) | Pinned; CI uses Temurin 21. A local `~/.local/wcm-toolchain.env` exports `JAVA_HOME`/`MAVEN_HOME` on the build box — `source` it before `mvn`. |
-| **Maven** | 3.9.x | No `mvnw` wrapper is committed; use the system/toolchain `mvn`. |
+| **JDK** | **21** (Temurin) | Pinned; CI uses Temurin 21. Point `JAVA_HOME` at a JDK 21 before building. |
+| **Maven** | 3.9.x | The committed wrapper **`backend/mvnw`** pins the version; a system `mvn` 3.9+ also works. |
 | **Node** | **20** | Pinned (`engines.node >= 20`). |
 | **npm** | 10+ | This repo uses **npm**, not Yarn (see Assumptions in TECHNICAL.md). |
 | **Docker** | recent | Postgres, the E2E browser images (Cypress/Playwright), and the k6 image. |
@@ -128,8 +132,8 @@ docker compose up -d postgres
 # 3. Install frontend deps.
 npm ci
 
-# 4. (one-time) make the pinned JDK 21 + Maven visible to your shell, if you use the toolchain env.
-source ~/.local/wcm-toolchain.env   # exports JAVA_HOME=…/jdk-21, MAVEN_HOME, PATH
+# 4. Ensure JAVA_HOME points at a JDK 21 (the backend builds with backend/mvnw).
+export JAVA_HOME=/path/to/jdk-21
 ```
 
 ---
@@ -206,10 +210,15 @@ fails the build if any quality gate trips, and uploads every report above as art
 
 ## Deploy
 
-The intended target is AWS: backend container → **ECR/EKS**, **RDS PostgreSQL 16.4**, frontend
-(`host-shell` + `wc-remote`'s `remoteEntry.js`) → **S3 + CloudFront** (CDN, with CORS/cache headers),
-and **SNS/SQS** for async side-effects. The event seam is abstracted behind an `EventPublisher` port —
-in-process locally, SNS→SQS under the `aws` profile. Real provisioning requires AWS credentials and
-explicit cost approval; the IaC/manifests and the deploy runbook are tracked in
-**[docs/TECHNICAL.md](docs/TECHNICAL.md)** (Deployment & runbook section). Until the cloud stack is
-provisioned, the whole product runs locally via the commands above.
+A live deployment runs on a **single AWS EC2 instance** (`t3.small`) via Docker Compose — the Spring
+backend, PostgreSQL 16.4, and an nginx-served federated frontend (`host-shell` + `wc-remote`), behind
+an Elastic IP. The full runbook and scripts are in **[deploy/](deploy/)** (`provision-ec2.sh` →
+`ship-to-ec2.sh`, `teardown-ec2.sh`; the two Dockerfiles + `nginx.conf` + `docker-compose.ec2.yml`).
+
+**Live:** **http://ec2-44-218-6-116.compute-1.amazonaws.com/** — hermetic `demo,e2e` profile (no Auth0
+needed); act as a persona with `?member=<slug>` (e.g. `?member=priya` = manager, `?member=diego` = IC).
+
+The event seam is abstracted behind an `EventPublisher` port — in-process here, SNS→SQS under the `aws`
+profile — so the cloud-native scale-up (EKS + RDS + S3/CloudFront CDN + SNS/SQS) is a profile/IaC swap,
+not a rewrite; that design is documented in **[docs/TECHNICAL.md](docs/TECHNICAL.md)** (Deployment &
+runbook). Everything also runs locally via the commands above.

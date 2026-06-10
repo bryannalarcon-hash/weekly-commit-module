@@ -12,12 +12,13 @@ The Weekly Commit Module is a **two-toolchain monorepo**: an **npm-workspaces + 
 (`default` / `test` / `e2e` / `demo` / `stress` / `graph` / `aws`), each flipping a specific seam
 (auth, seed, calendar adapter, event publisher) with **no code change**.
 
-The **AWS deployment** is a *design + runbook* (`docs/TECHNICAL.md:359-375`): backend→ECR/EKS, RDS
-Postgres 16.4, the federated FE (`host-shell` + `wc-remote`'s `remoteEntry.js`)→S3+CloudFront, and an
-SNS+SQS+DLQ event seam that flips on purely by activating the `aws` profile and setting
-`WCM_SNS_TOPIC_ARN` / `WCM_SQS_QUEUE_URL`. **EKS/S3/CloudFront provisioning is not executed** by
-default CI — it is gated on AWS credentials + explicit cost approval (a partial-satisfaction of the
-brief's AWS requirement; the SNS→SQS seam itself is built and LocalStack-tested).
+The **AWS deployment is live** on a single EC2 `t3.small` (`deploy/`): Postgres 16.4 + the Spring
+backend + an nginx-served federated FE via `docker compose`, behind an Elastic IP at
+**`http://ec2-44-218-6-116.compute-1.amazonaws.com/`** (hermetic `demo,e2e` profile; pick a persona
+via `?member=<slug>`). The heavier **cloud-native** topology (backend→ECR/EKS, RDS Postgres 16.4, the
+federated FE→S3+CloudFront, an SNS+SQS+DLQ event seam that flips on by activating the `aws` profile +
+`WCM_SNS_TOPIC_ARN` / `WCM_SQS_QUEUE_URL`) is a documented *design* (`docs/TECHNICAL.md:359-378`) —
+intentionally **not** provisioned (cost), though the SNS→SQS seam itself is built and LocalStack-tested.
 
 > **Documented deviation — npm, not Yarn.** The brief lists *Yarn Workspaces*; this build uses **npm
 > workspaces** with the same `apps/*`+`libs/*` layout, keeping Nx for the task graph
@@ -196,9 +197,10 @@ NOTE: EKS/S3/CloudFront provisioning is **design + runbook only**, gated on AWS 
   ITs are not `@Transactional` and must hand-clean rows (`SnsSqsEventingIT.java:130-145`).
 - **Actuator is health-only.** Only `/actuator/health` is exposed and `permitAll` in both security
   chains (`application.yml:71-81`); other actuator endpoints are intentionally absent.
-- **AWS not provisioned by default CI.** The `live` CI job and any `cdk deploy` are gated on secrets +
-  cost approval (`ci.yml:204-247`, `docs/TECHNICAL.md:371-374`) — "deployed" here means the design +
-  the local/LocalStack equivalent, not a standing cloud stack.
+- **Live on single-host EC2; cloud-native not provisioned.** The app is deployed and live at
+  `http://ec2-44-218-6-116.compute-1.amazonaws.com/` via the `deploy/` scripts (manual, not CI). The
+  heavier **EKS/S3/CloudFront** topology and the `live` CI job are still gated on secrets + cost
+  approval (`ci.yml:204-247`) — that cloud-native stack is design + LocalStack-equivalent, not standing.
 
 ## Connects to
 
