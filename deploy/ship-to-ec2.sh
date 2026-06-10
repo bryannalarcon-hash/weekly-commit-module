@@ -20,9 +20,10 @@ done
 echo "[2/5] stream images (wcm-backend + wcm-frontend) -> docker load on host"
 docker save wcm-backend:latest wcm-frontend:latest | gzip | $SSH 'gunzip | sudo docker load'
 
-echo "[3/5] copy compose + env"
+echo "[3/5] copy compose + env + Caddyfile"
 $SCP "$HERE/docker-compose.ec2.yml" ec2-user@"$WCM_EC2_PUBLIC_IP":/home/ec2-user/docker-compose.yml
 $SCP "$HERE/.env" ec2-user@"$WCM_EC2_PUBLIC_IP":/home/ec2-user/.env
+$SCP "$HERE/Caddyfile" ec2-user@"$WCM_EC2_PUBLIC_IP":/home/ec2-user/Caddyfile
 
 echo "[4/5] compose up"
 $SSH 'cd /home/ec2-user && sudo docker compose --env-file .env up -d'

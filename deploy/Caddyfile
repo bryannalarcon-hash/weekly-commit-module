@@ -1,0 +1,16 @@
+# deploy/Caddyfile — TLS edge for the EC2 stack. Terminates HTTPS for the sslip.io hostname
+# (auto-cert via Let's Encrypt/ZeroSSL HTTP-01) and keeps plain-HTTP-by-IP working; both proxy to
+# the existing nginx "frontend" container, which serves the SPA + /remote/ and forwards /api.
+# HTTPS exists for MS Graph OAuth: Microsoft requires an https redirect URI off localhost.
+{
+	email bryannalarcon@gmail.com
+}
+
+44-218-6-116.sslip.io {
+	reverse_proxy frontend:80
+}
+
+# Plain HTTP catch-all (e.g. http://44.218.6.116/) keeps the original demo URL working.
+http:// {
+	reverse_proxy frontend:80
+}

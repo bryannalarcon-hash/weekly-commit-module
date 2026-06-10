@@ -1,8 +1,9 @@
 # deploy/docker-compose.ec2.yml — the on-instance stack (image-only; no build context ships to the
-# EC2 host). Identical topology to docker-compose.prod.yml — Postgres + backend (demo,e2e, seeded) +
-# nginx frontend on :80 — but it consumes the pre-built wcm-backend / wcm-frontend images that
-# ship-to-ec2.sh loads via `docker save | ssh docker load`. GRAPH_TOKEN_ENC_KEY comes from the .env
-# placed beside this file on the instance.
+# EC2 host). Postgres + backend (demo,e2e,graph — real MS Graph adapter) + nginx frontend + a Caddy
+# TLS edge publishing :80/:443 (HTTPS at 44-218-6-116.sslip.io for the Graph OAuth redirect; plain
+# HTTP by IP still works). Consumes the pre-built wcm-backend / wcm-frontend images that
+# ship-to-ec2.sh loads via `docker save | ssh docker load`. Secrets (GRAPH_TOKEN_ENC_KEY, AZURE_*)
+# come from the .env placed beside this file on the instance.
 services:
   postgres:
     image: postgres:16.4
@@ -27,11 +28,16 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: demo,e2e
+      SPRING_PROFILES_ACTIVE: demo,e2e,graph
       DB_URL: jdbc:postgresql://postgres:5432/wcm
       POSTGRES_USER: wcm
       POSTGRES_PASSWORD: wcm
       GRAPH_TOKEN_ENC_KEY: ${GRAPH_TOKEN_ENC_KEY}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+      AZURE_REDIRECT_URI: https://44-218-6-116.sslip.io/api/graph/callback
+      APP_BASE_URL: https://44-218-6-116.sslip.io
     expose:
       - '8080'
     restart: unless-stopped
@@ -41,9 +47,25 @@ services:
     container_name: wcm-frontend
     depends_on:
       - backend
+    expose:
+      - '80'
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: wcm-caddy
+    depends_on:
+      - frontend
     ports:
       - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - wcm-caddy-data:/data
+      - wcm-caddy-config:/config
     restart: unless-stopped
 
 volumes:
   wcm-pgdata:
+  wcm-caddy-data:
+  wcm-caddy-config:

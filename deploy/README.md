@@ -18,14 +18,19 @@ Elastic IP. Chosen for a cheap (~$15/mo, free-tier eligible), fast, fully-revers
 | Container | Image | Role |
 |---|---|---|
 | `wcm-postgres` | `postgres:16.4` | DB (named volume; Flyway-migrated, demo-seeded on first boot) |
-| `wcm-backend` | `wcm-backend:latest` | Spring Boot API, profiles **`demo,e2e`** (seeded + `X-Debug-Member` header auth) |
+| `wcm-backend` | `wcm-backend:latest` | Spring Boot API, profiles **`demo,e2e,graph`** (seeded + `X-Debug-Member` header auth + real MS Graph adapter) |
 | `wcm-frontend` | `wcm-frontend:latest` | nginx: host-shell at `/`, federated remote at `/remote/`, `/api` → backend |
+| `wcm-caddy` | `caddy:2` | TLS edge on `:80`/`:443` — auto-cert HTTPS at `https://44-218-6-116.sslip.io/`; plain HTTP by IP still proxied |
 
 **Auth posture (demo):** the public URL runs the **hermetic** profile — the same `X-Debug-Member`
 persona seam the local demo uses (CB-2 login bypass + switcher pill), so there is **no Auth0
-round-trip** to configure for a throwaway host. Real Auth0 + live MS Graph stay a local concern
-(the redirect URIs are `localhost`, and Graph needs HTTPS); on this host the `StubCalendarAdapter`
-is active, so Outlook appears mocked, not live.
+round-trip** to configure for a throwaway host. **MS Graph is LIVE here**: Microsoft requires an
+HTTPS redirect URI off localhost, which is why the Caddy edge + sslip.io hostname exist — the
+registered redirect is `https://44-218-6-116.sslip.io/api/graph/callback`, and the backend gets
+`AZURE_*` + `APP_BASE_URL` from the on-instance `.env` (copied from gitignored `deploy/.env` by
+`ship-to-ec2.sh`). Each persona still needs a one-time Outlook consent click (a real Microsoft
+sign-in) before calendar features go live for them; until then those endpoints report
+`connected:false`.
 
 ## Build the images
 ```bash
