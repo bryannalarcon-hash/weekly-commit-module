@@ -1,5 +1,6 @@
 // apps/wc-remote/src/screens/Settings.test.tsx — RTL tests for the re-skinned two-tab Settings screen
-// (brief §6.10). MSW-backed, real RTK Query. ACCOUNT tab: profile (display name + manager-access badge),
+// (brief §6.10). MSW-backed, real RTK Query. ACCOUNT tab: profile (display name + manager-access badge,
+// role line derived from canReview + managerName — never the old hardcoded title/manager string),
 // read-only email, timezone select (account-timezone), Save (account-save) persisting via PUT
 // /settings/account, the 5 notification toggles persisting via PUT /settings/notifications, Sign out.
 // INTEGRATIONS tab: the Outlook delegated-Graph consent flow — disconnected → Connect triggers the
@@ -37,6 +38,7 @@ const account: MemberAccountDto = {
   email: 'lindsley.alvaro@solovis.com',
   displayName: 'Lindsley Alvaro',
   timezone: 'America/Chicago',
+  managerName: 'Sofia Romano',
   canReview: true,
   canEditRcdo: true,
 };
@@ -84,6 +86,36 @@ describe('Settings — Account tab', () => {
     );
     expect(screen.getByTestId('account-email')).toHaveAttribute('readonly');
     expect((screen.getByTestId('account-timezone') as HTMLSelectElement).value).toBe('America/Chicago');
+  });
+
+  it('derives the role line from real data for a manager — never the old hardcoded title', async () => {
+    server.use(http.get('*/settings/account', () => HttpResponse.json(account)));
+    server.use(http.get('*/settings/notifications', () => HttpResponse.json(notifications)));
+    render(withStore(<Settings />));
+
+    // canReview:true → "Manager"; managerName non-null → " · reports to <managerName>".
+    const line = await screen.findByTestId('account-role-line');
+    expect(line).toHaveTextContent('Manager · reports to Sofia Romano');
+
+    // The pre-fix hardcoded string must be gone for every persona.
+    expect(screen.queryByText(/Senior Engineer/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Brian Artemayev/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Individual contributor" and omits "reports to" when managerName is null', async () => {
+    const topLevelIc: MemberAccountDto = {
+      ...account,
+      canReview: false,
+      canEditRcdo: false,
+      managerName: null,
+    };
+    server.use(http.get('*/settings/account', () => HttpResponse.json(topLevelIc)));
+    server.use(http.get('*/settings/notifications', () => HttpResponse.json(notifications)));
+    render(withStore(<Settings />));
+
+    const line = await screen.findByTestId('account-role-line');
+    expect(line).toHaveTextContent('Individual contributor');
+    expect(line).not.toHaveTextContent('reports to');
   });
 
   it('saves an edited display name + timezone via PUT /settings/account', async () => {

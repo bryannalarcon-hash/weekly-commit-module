@@ -1,6 +1,6 @@
 // SettingsControllerIT — full-stack MockMvc tests for the Settings > Account tab (profile +
 // timezone + notification toggles). Proves: GET account returns the ACTING member's
-// profile/timezone;
+// profile/timezone + managerName resolved from the managerId self-FK (null for a top exec);
 // PUT updates displayName + a valid timezone and rejects an invalid timezone (400) + blank
 // displayName (400); notifications lazy-create all-true defaults then a PUT persists; and a SECOND
 // member cannot see the first's settings (acting-member row-level scoping via
@@ -29,12 +29,17 @@ class SettingsControllerIT extends AbstractWebIT {
   @Autowired private NotificationPreferenceRepository preferences;
 
   private Member member(String slug, MemberRole role, String timezone) {
+    return member(slug, role, timezone, null);
+  }
+
+  private Member member(String slug, MemberRole role, String timezone, UUID managerId) {
     return members.saveAndFlush(
         Member.builder()
             .email(slug + "-" + UUID.randomUUID() + "@solovis.test")
             .displayName(slug)
             .role(role)
             .timezone(timezone)
+            .managerId(managerId)
             .auth0Subject("auth0|" + slug + "-" + UUID.randomUUID())
             .build());
   }
@@ -74,6 +79,31 @@ class SettingsControllerIT extends AbstractWebIT {
         .andExpect(jsonPath("$.canEditRcdo").value(false))
         // An employee/IC is not a reviewer either.
         .andExpect(jsonPath("$.canReview").value(false));
+  }
+
+  @Test
+  void getAccountResolvesManagerNameFromManagerGraph() throws Exception {
+    // The Settings profile line shows "reports to <manager>" — managerName must be the manager's
+    // displayName resolved from the managerId self-FK, never a hardcoded value or a raw id.
+    Member exec = member("execTop", MemberRole.MANAGER, null);
+    Member report = member("reportIc", MemberRole.EMPLOYEE, null, exec.getId());
+
+    mockMvc
+        .perform(get("/api/settings/account").with(as(report)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerName").value("execTop"));
+  }
+
+  @Test
+  void getAccountReturnsNullManagerNameForTopExec() throws Exception {
+    // A top-of-graph member (managerId null) has nobody to report to -> managerName null,
+    // mirroring the timezone-cleared serialization (absent from the JSON body).
+    Member exec = member("execNoMgr", MemberRole.MANAGER, null);
+
+    mockMvc
+        .perform(get("/api/settings/account").with(as(exec)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.managerName").doesNotExist());
   }
 
   @Test

@@ -1,7 +1,9 @@
 // apps/wc-remote/src/screens/Settings.tsx — the Settings screen (brief §6.10), re-skinned to the WCM
 // c-design (prototype/wcm/page-settings.jsx) with TWO tabs: ACCOUNT and INTEGRATIONS.
-// ACCOUNT: profile card (Avatar + editable display name, role + manager-access badge, read-only email,
-//   timezone select), a Notifications group (5 Toggles), and a Session card with a red Sign out — wired
+// ACCOUNT: profile card (Avatar + editable display name, a role line derived from the account —
+//   canReview → "Manager"/"Individual contributor" plus "reports to <managerName>" only when the
+//   server resolved one — manager-access badge, read-only email, timezone select), a Notifications
+//   group (5 Toggles), and a Session card with a red Sign out — wired
 //   to useGetAccountQuery/useUpdateAccountMutation + useGetNotificationsQuery/useUpdateNotificationsMutation.
 // INTEGRATIONS: the load-bearing Microsoft Outlook delegated Graph consent handoff — Connect →
 //   connectOutlook returns the authorize URL → the browser redirects to consent; states
@@ -144,8 +146,12 @@ function AccountTab({ onSignOut }: { onSignOut?: () => void }): JSX.Element {
                 maxWidth: 320,
               }}
             />
-            <div style={{ fontSize: 13, color: 'var(--ink-low)', marginTop: 3 }}>
-              Senior Engineer · reports to Brian Artemayev
+            <div
+              data-testid="account-role-line"
+              style={{ fontSize: 13, color: 'var(--ink-low)', marginTop: 3 }}
+            >
+              {account.canReview ? 'Manager' : 'Individual contributor'}
+              {account.managerName != null && ` · reports to ${account.managerName}`}
             </div>
             {account.canReview && (
               <div

@@ -278,6 +278,8 @@ export interface MemberAccountDto {
   email: string;
   displayName: string;
   timezone: string;
+  /** The manager's displayName (resolved server-side from the managerId self-FK); null for a top exec. */
+  managerName: string | null;
   /** Whether this member can review reports (manager access) — read-only, server-derived. */
   canReview: boolean;
   /** Whether this member can edit the RCDO strategy tree (admin:rcdo scope) — gates FE edit mode. */

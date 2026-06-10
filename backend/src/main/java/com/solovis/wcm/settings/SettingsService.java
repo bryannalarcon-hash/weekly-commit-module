@@ -1,14 +1,17 @@
 // SettingsService — the Settings > Account tab read model + writes for the acting member (KTD6).
-// Delegates profile (displayName/timezone) to MemberAccountService and owns the notification-toggle
-// upsert: notifications() lazy-creates an all-true NotificationPreference on first read, like the
-// V8 outlook_preference upsert. All operations are scoped to the acting member from
-// CurrentMemberProvider (never a body id), giving row-level isolation; missing member -> 404.
+// Delegates profile (displayName/timezone) to MemberAccountService, resolves managerName from the
+// member's managerId self-FK via MemberRepository (null for a top exec), and owns the
+// notification-toggle upsert: notifications() lazy-creates an all-true NotificationPreference on
+// first read, like the V8 outlook_preference upsert. All operations are scoped to the acting
+// member from CurrentMemberProvider (never a body id), giving row-level isolation; missing
+// member -> 404.
 package com.solovis.wcm.settings;
 
 import com.solovis.wcm.common.CurrentMemberProvider;
 import com.solovis.wcm.common.SecurityConfig;
 import com.solovis.wcm.member.Member;
 import com.solovis.wcm.member.MemberAccountService;
+import com.solovis.wcm.member.MemberRepository;
 import com.solovis.wcm.settings.dto.MemberAccountDto;
 import com.solovis.wcm.settings.dto.NotificationPreferenceDto;
 import com.solovis.wcm.settings.dto.UpdateMemberAccountDto;
@@ -23,14 +26,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class SettingsService {
 
   private final MemberAccountService accounts;
+  private final MemberRepository members;
   private final NotificationPreferenceRepository preferences;
   private final CurrentMemberProvider currentMember;
 
   public SettingsService(
       MemberAccountService accounts,
+      MemberRepository members,
       NotificationPreferenceRepository preferences,
       CurrentMemberProvider currentMember) {
     this.accounts = accounts;
+    this.members = members;
     this.preferences = preferences;
     this.currentMember = currentMember;
   }
@@ -87,14 +93,26 @@ public class SettingsService {
                         .build()));
   }
 
-  private static MemberAccountDto toAccountDto(Member member) {
+  private MemberAccountDto toAccountDto(Member member) {
     return new MemberAccountDto(
         member.getId(),
         member.getEmail(),
         member.getDisplayName(),
         member.getTimezone(),
+        managerNameOf(member),
         member.canReview(),
         canEditRcdo());
+  }
+
+  /**
+   * The member's manager's displayName via the managerId self-FK; null when top-of-graph (no
+   * manager) or the manager row no longer exists.
+   */
+  private String managerNameOf(Member member) {
+    UUID managerId = member.getManagerId();
+    return managerId == null
+        ? null
+        : members.findById(managerId).map(Member::getDisplayName).orElse(null);
   }
 
   /**
