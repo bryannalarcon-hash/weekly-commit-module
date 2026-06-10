@@ -40,8 +40,10 @@ describe('WcRoutes (internal route table)', () => {
   it('mounts My Week at "/" with the manager sub-nav available', async () => {
     renderAt('/');
     expect(await screen.findByTestId('start-week')).toBeInTheDocument();
-    // Manager → the top-level Manager tab is present in the re-skinned WcShell sub-nav.
-    expect(screen.getByTestId('wc-nav-manager')).toBeInTheDocument();
+    // Manager → the top-level Manager tab is present in the re-skinned WcShell sub-nav. findBy (not
+    // getBy): the shell nav and the My Week body settle on independent renders, so under parallel
+    // load the tab can lag start-week by a tick.
+    expect(await screen.findByTestId('wc-nav-manager')).toBeInTheDocument();
   });
 
   it('mounts the History route', async () => {

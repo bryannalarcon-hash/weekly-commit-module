@@ -2,7 +2,9 @@
 // VITE_AUTH0_* (U17). EMPTY-SAFE: when no domain/clientId is set (tests, CI build, host-embedded mode
 // where the host owns auth) it renders a stub Auth0Context with isLoading:false / isAuthenticated:false
 // instead of the real provider, so the remote builds and tests run WITHOUT a live Auth0 tenant and
-// never spins forever. Pairs with AuthBridge, which yields the unified getToken.
+// never spins forever. HERMETIC-SAFE: an E2E build (VITE_E2E) ALWAYS gets the stub — auth there is
+// the X-Debug-Member seam (KTD13), and booting the real Auth0 client from a developer .env crashes
+// auth0-spa-js on the suite's insecure host.docker.internal origin. Pairs with AuthBridge.
 import type { ReactNode } from 'react';
 import {
   Auth0Context,
@@ -11,6 +13,7 @@ import {
   type Auth0ContextInterface,
   type User,
 } from '@auth0/auth0-react';
+import { isE2e } from './e2eAuth';
 
 /** Read the Auth0 config from Vite env (all optional → empty-safe). */
 export interface Auth0Config {
@@ -62,8 +65,10 @@ export interface AuthProviderProps {
 export function AuthProvider({ children, config }: AuthProviderProps): JSX.Element {
   const cfg = config ?? readEnvConfig();
 
-  if (!isAuth0Configured(cfg)) {
-    // No live Auth0 → provide the resolved stub so useAuth0() is safe (host owns auth, or tests).
+  if (isE2e() || !isAuth0Configured(cfg)) {
+    // Stub when no live Auth0 is configured (host owns auth, or tests) — and ALWAYS in a hermetic
+    // E2E build, where auth is the X-Debug-Member seam: a real .env tenant must not boot
+    // auth0-spa-js there (it throws on the suite's insecure host.docker.internal origin).
     return (
       <Auth0Context.Provider value={STUB_CONTEXT}>
         {children}

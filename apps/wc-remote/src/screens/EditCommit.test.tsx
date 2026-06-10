@@ -112,14 +112,16 @@ describe('EditCommit', () => {
     const submit = await screen.findByTestId('submit-lock');
     expect(submit).toBeDisabled();
 
-    // Open the picker drawer from the row's link control.
-    await user.click(screen.getByTestId('link-outcome'));
+    // Open the picker drawer from the row's link control. findBy (not getBy): the per-item link
+    // control settles a render after submit-lock, so under parallel load it can briefly be absent.
+    await user.click(await screen.findByTestId('link-outcome'));
     const picker = await screen.findByTestId('rcdo-picker');
-    expect(within(picker).getByTestId('rcdo-tree')).toBeInTheDocument();
+    expect(await within(picker).findByTestId('rcdo-tree')).toBeInTheDocument();
 
     // Drill to the Supporting-Outcome leaf and select it (aria-level=4 leaf is the selectable one).
-    // First click the Rally Cry → Defining Objective → Outcome, then the leaf.
-    await user.click(within(picker).getByTestId('tree-item-rc-1'));
+    // First click the Rally Cry → Defining Objective → Outcome, then the leaf. findBy throughout:
+    // the tree nodes hydrate from an RTK Query fetch that can lag the drawer shell under load.
+    await user.click(await within(picker).findByTestId('tree-item-rc-1'));
     await user.click(await within(picker).findByTestId('tree-item-do-1'));
     await user.click(await within(picker).findByTestId('tree-item-o-1'));
     await user.click(await within(picker).findByTestId('tree-item-so-x'));

@@ -2,7 +2,8 @@
 // scheduling an ad-hoc Outlook event (e.g. a 1:1) with one of their reports. Carries the ORGANIZER
 // (the acting manager, whose delegated token creates the event), the report's display name/email
 // (the attendee), the resolved subject, the start instant with its original offset, the duration,
-// and an optional note for the event body. Built by OutlookService.schedule after row-level authz.
+// an optional note for the event body, and an optional clientRequestId the Graph adapter forwards
+// as the transactionId idempotency key. Built by OutlookService.schedule after row-level authz.
 package com.solovis.wcm.integration;
 
 import java.time.OffsetDateTime;
@@ -15,4 +16,5 @@ public record ScheduledEventCommand(
     String subject,
     OffsetDateTime start,
     int durationMinutes,
-    String note) {}
+    String note,
+    String clientRequestId) {}

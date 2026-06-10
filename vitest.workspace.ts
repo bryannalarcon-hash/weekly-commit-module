@@ -41,6 +41,13 @@ export default defineWorkspace([
       // MSW matches on path, so the host portion is irrelevant to the mocks.
       environmentOptions: { jsdom: { url: 'http://localhost/' } },
       env: { VITE_API_BASE: 'http://localhost/api' },
+      // The heaviest interaction specs (EditCommit drawer flow, route table) string several
+      // userEvent + waitFor steps together; under full 44-file parallelism on a busy CPU they can be
+      // starved past the 5s default and flake. They pass in well under a second when not contended,
+      // so a higher ceiling absorbs the starvation without slowing the happy path. hookTimeout
+      // covers MSW server start/seed in beforeAll under the same contention.
+      testTimeout: 20000,
+      hookTimeout: 20000,
       setupFiles: ['./vitest.setup.ts'],
       include: [
         'apps/**/src/**/*.{test,spec}.{ts,tsx}',

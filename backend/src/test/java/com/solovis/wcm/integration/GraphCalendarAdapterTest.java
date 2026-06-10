@@ -77,10 +77,10 @@ class GraphCalendarAdapterTest {
     assertThat(request.getMethod()).isEqualTo("POST");
     assertThat(request.getPath()).isEqualTo("/me/events");
     assertThat(request.getHeader("Authorization")).isEqualTo("Bearer delegated-access-token");
-    // transactionId == commitId makes the create idempotent across redelivery.
-    assertThat(request.getHeader("transactionId")).isEqualTo(commitId.toString());
-
     Map<?, ?> body = json.readValue(request.getBody().readUtf8(), Map.class);
+    // transactionId == commitId (an event BODY property — Graph ignores a header) makes the
+    // create idempotent across redelivery.
+    assertThat((String) body.get("transactionId")).isEqualTo(commitId.toString());
     assertThat((String) body.get("subject")).contains("2026-06-08");
     Map<?, ?> start = (Map<?, ?>) body.get("start");
     Map<?, ?> end = (Map<?, ?>) body.get("end");

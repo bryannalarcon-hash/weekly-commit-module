@@ -179,6 +179,10 @@ public class OutlookService {
     if (!tokenService.isConnected(acting.getId())) {
       throw new IllegalCommitStateException("connect Outlook before scheduling");
     }
+    // A 1:1 in the past is never intended; 5-minute grace absorbs clock skew + form dwell time.
+    if (request.startDateTime().isBefore(java.time.OffsetDateTime.now().minusMinutes(5))) {
+      throw new IllegalArgumentException("startDateTime must be in the future");
+    }
     String subject =
         request.subject() == null || request.subject().isBlank()
             ? "1:1 — " + report.getDisplayName()
@@ -192,7 +196,8 @@ public class OutlookService {
             subject,
             request.startDateTime(),
             durationMinutes,
-            request.note());
+            request.note(),
+            request.clientRequestId());
     return new ScheduleEventResponse(calendarSync.scheduleEvent(cmd));
   }
 

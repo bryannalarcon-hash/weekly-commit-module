@@ -64,7 +64,8 @@ class GraphCalendarAdapterScheduleTest {
         // -05:00 offset: the adapter must convert to UTC (15:30) before sending.
         OffsetDateTime.of(2026, 6, 15, 10, 30, 0, 0, ZoneOffset.ofHours(-5)),
         45,
-        "agenda: <pipeline> & blockers");
+        "agenda: <pipeline> & blockers",
+        "req-12345");
   }
 
   @Test
@@ -88,6 +89,8 @@ class GraphCalendarAdapterScheduleTest {
 
     Map<?, ?> body = json.readValue(request.getBody().readUtf8(), Map.class);
     assertThat(body.get("subject")).isEqualTo("Pipeline sync");
+    // Per-form-open idempotency key rides as the event's transactionId BODY property.
+    assertThat(body.get("transactionId")).isEqualTo("req-12345");
 
     // 10:30-05:00 == 15:30Z; end = start + 45 minutes, both stamped timeZone UTC.
     Map<?, ?> start = (Map<?, ?>) body.get("start");

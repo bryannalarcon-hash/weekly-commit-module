@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "772a19325122d39fe7c8bbc72fdfe4836d867d44",
+  "lastRun": "772a19325122d39fe7c8bbc72fdfe4836d867d44",
+  "tool": "layer-docs",
+  "mode": "initial",
+  "layers": [
+    { "slug": "overview", "name": "System Overview", "doc": "OVERVIEW.md", "sourceGlobs": ["**"], "docHash": "sha256:8d75bb524f90ab3536f400553232839d1178792395966b24e4b8bf7276f111c3" },
+    { "slug": "01-domain-lifecycle", "name": "Domain & Lifecycle", "doc": "01-domain-lifecycle.md", "sourceGlobs": ["backend/src/main/java/com/solovis/wcm/commit/**", "backend/src/main/java/com/solovis/wcm/rcdo/**", "backend/src/main/java/com/solovis/wcm/member/**", "backend/src/main/java/com/solovis/wcm/review/**", "backend/src/main/java/com/solovis/wcm/common/AbstractAuditingEntity.java", "backend/src/main/resources/db/migration/**"], "docHash": "sha256:460bbbc6d59c633d7b1300d0fa056edc8bedf3b38c46778166e896cde0f1e2ca" },
+    { "slug": "02-api-contract", "name": "API & Contract", "doc": "02-api-contract.md", "sourceGlobs": ["backend/src/main/java/com/solovis/wcm/**/*Controller.java", "backend/src/main/java/com/solovis/wcm/common/ApiExceptionHandler.java", "backend/src/main/java/com/solovis/wcm/common/PageResponse.java", "docs/openapi.yaml"], "docHash": "sha256:c6ca9c8dfa3d332ffaff26571f65592d8f29438584f0f50d894301d11fc6f42d" },
+    { "slug": "03-security-authz", "name": "Security & Authorization", "doc": "03-security-authz.md", "sourceGlobs": ["backend/src/main/java/com/solovis/wcm/common/*Security*.java", "backend/src/main/java/com/solovis/wcm/common/*CurrentMember*.java", "backend/src/main/java/com/solovis/wcm/common/AudienceValidator.java", "backend/src/main/java/com/solovis/wcm/integration/GraphConsent*.java"], "docHash": "sha256:eb6bd77ab59089f6d5231dc67fe8e0c45eb2e055b75b958813c3671ab13ae35a" },
+    { "slug": "04-integrations-eventing", "name": "Integrations & Eventing", "doc": "04-integrations-eventing.md", "sourceGlobs": ["backend/src/main/java/com/solovis/wcm/integration/**", "backend/src/main/java/com/solovis/wcm/event/**"], "docHash": "sha256:2164cb302cb0113e417f8c1248eb475c5290110003571e944796cb1f0beef9ff" },
+    { "slug": "05-microfrontend-federation", "name": "Micro-Frontend Shell & Federation", "doc": "05-microfrontend-federation.md", "sourceGlobs": ["apps/host-shell/**", "apps/wc-remote/vite.config.ts", "apps/wc-remote/src/main.tsx", "apps/wc-remote/src/WeeklyCommitApp.tsx", "apps/wc-remote/src/widget.tsx", "apps/wc-remote/src/app/**"], "docHash": "sha256:0083924c163a5910ee2436437dfd5cc76e34d21baf3fc1c7dc027ff8b37875b5" },
+    { "slug": "06-frontend-data", "name": "Frontend Data Layer", "doc": "06-frontend-data.md", "sourceGlobs": ["libs/api/**", "libs/types/**"], "docHash": "sha256:50eed839bcd63600ab0d6ccd97964b1028f5e29dc6cb7f2fd051aaebb25b0669" },
+    { "slug": "07-screens-design-system", "name": "Screens & Design System", "doc": "07-screens-design-system.md", "sourceGlobs": ["apps/wc-remote/src/screens/**", "apps/wc-remote/src/components/**", "apps/wc-remote/src/lib/**", "libs/ui/**"], "docHash": "sha256:a60e9dca618c53a22523371391eca930aae023238eaf89ee2789a75d327362ab" },
+    { "slug": "08-testing-quality", "name": "Testing & Quality Gates", "doc": "08-testing-quality.md", "sourceGlobs": ["backend/src/test/**", "e2e/**", "perf/**", ".github/workflows/**", "vitest.config.ts", "vitest.workspace.ts", "vitest.setup.ts"], "docHash": "sha256:c4f1e8c6b5b7b683c2402f9a578f2fa30d84d27b0e9c224fec906b6411914d80" },
+    { "slug": "09-build-deploy", "name": "Build, Monorepo & Deployment", "doc": "09-build-deploy.md", "sourceGlobs": ["package.json", "nx.json", "tsconfig.base.json", "tailwind.config.js", "postcss.config.js", "docker-compose.yml", "backend/pom.xml", ".env.example", "docs/setup/**"], "docHash": "sha256:ba457b057ff47d11a7da64750144637ced838de625cbbffaa6b610bec9d4c53f" }
+  ],
+  "sourceHashes": {
+    "backend/src/main/java/com/solovis/wcm/commit/LifecycleService.java": "sha256:ad13bd93df9744383081b2c78da5394906ce3466d0230d63a1621c48d6a00d63",
+    "backend/src/main/java/com/solovis/wcm/common/AbstractAuditingEntity.java": "sha256:9df92cdc1c6dbdff95d4c2091d1a2738d4ecd1d062e27f02d66c1849675359e9",
+    "backend/src/main/java/com/solovis/wcm/commit/CommitController.java": "sha256:eac00bf5125afeb7093c8daf3a87ca7ce2c2ae541e9ecb18cf291c0f83f29845",
+    "backend/src/main/java/com/solovis/wcm/common/PageResponse.java": "sha256:6d1a92d0249382b965d1f842a2e888b828e18d1c5d2978d0f183afc36d733474",
+    "backend/src/main/java/com/solovis/wcm/common/SecurityConfig.java": "sha256:d42eb369808f2a8ad58983838e40f149c028940d17baaeb598fd4aadd0565ec8",
+    "backend/src/main/java/com/solovis/wcm/integration/OutlookService.java": "sha256:7b6aec9e42ec531d085a759ad681c03fb6026986a5430310f500ee011b205188",
+    "backend/src/main/java/com/solovis/wcm/integration/CalendarSyncPort.java": "sha256:af9756e373be836073fda82eaa31b341efcef6f62d70df6bfd055915630e0074",
+    "backend/src/main/java/com/solovis/wcm/event/EventPublisher.java": "sha256:7ac675bbd219d22925b02abbb0e1b01a51646773ed7a4ee9ac1f8ce25d1297e7",
+    "apps/host-shell/vite.config.ts": "sha256:966aa7d8e4339453ef4cf33cc78b71f111c25d4fb001b1cd15b97883232d0585",
+    "apps/wc-remote/vite.config.ts": "sha256:54b16d76085157334b6914d938d68831c3a49a15eaae23ba9ed447c6a0e95f3a",
+    "apps/wc-remote/src/app/routes.tsx": "sha256:0d320c8a87479a40d11422e395a74f492801b94c38050e378888b473314a06bb",
+    "apps/wc-remote/src/app/AuthBridge.tsx": "sha256:a27be1d9f56546dd08d72123445b2c89461b59d1d22ba4fbd20c1dba1b075939",
+    "libs/api/src/commitApi.ts": "sha256:8a198b5e261496d2593d907396fe37de0dbab5b7d4923a7243ba65bbd34c7e64",
+    "libs/api/src/tags.ts": "sha256:ee767a96dd83d1400d79b0a4eae07e4af7faf974e45a5f46f3c2f86d6f6e6da1",
+    "libs/types/src/contract.ts": "sha256:913b23f720e02b9044ca605110a8b2824deafded263340ab70c2201042840a79",
+    "libs/ui/src/tokens.ts": "sha256:02766a6fd0d3d36b04a1a5c09374a56489fb79b4a113bdf2ed6b68d0d01f5cfd",
+    "libs/ui/src/theme.colors.mjs": "sha256:c4f0610d88e68d47c6979c75a42b273f033e188da832327d1c3968a1f7ea9704",
+    "apps/wc-remote/src/screens/EditCommit.tsx": "sha256:4bd710a291285fa369ca82cb48876a4250ee3a0a3898f7f12569e0bf525ecfd0",
+    "vitest.config.ts": "sha256:59b4e679f603a9bb5cbc5e2bfec6c318d7bf9781e6115954b3246a111527413b",
+    "backend/pom.xml": "sha256:2495364c07cac6e14a677770f24cda435e080d750d4798eab79730428bc8ce66",
+    "nx.json": "sha256:82d90cc869a45cc420c1be90dfb6fc67c17120fe953557b1cf36450a288606e6",
+    "tsconfig.base.json": "sha256:ca69d6f50aadd850566a9965d55216ab2e5f619a9de71fae24dcb310d35bed33"
+  }
+}

@@ -253,6 +253,8 @@ export interface ScheduleOutlookEventRequest {
   durationMinutes: number;
   /** Optional body/agenda note placed on the event. */
   note?: string | null;
+  /** Idempotency key (one per dialog open): a retried POST dedups on Graph's transactionId. */
+  clientRequestId?: string | null;
 }
 
 /** POST /api/integration/outlook/schedule response — the created Graph calendar event's id. */

@@ -9,7 +9,7 @@
 //   only when connected — via useGetOutlookConnectionQuery/useConnectOutlookMutation/
 //   useDisconnectOutlookMutation/useUpdateOutlookSettingsMutation. All data + mutations via RTK Query.
 // Default export `Settings` (signature stable; props optional) — routes import it with no props.
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { NotificationPreferenceDto } from '@wcm/types';
 import {
   useConnectOutlookMutation,
@@ -79,15 +79,11 @@ function AccountTab({ onSignOut }: { onSignOut?: () => void }): JSX.Element {
   const account = accountQ.data;
   const notif = notifQ.data;
 
-  // Local editable draft of the display name + timezone (committed on Save).
-  const [displayName, setDisplayName] = useState('');
-  const [timezone, setTimezone] = useState('');
-  useEffect(() => {
-    if (account) {
-      setDisplayName(account.displayName);
-      setTimezone(account.timezone);
-    }
-  }, [account]);
+  // Local edits as an overlay over the fetched account (null = pristine, not yet touched). The
+  // field values are DERIVED from `account` until the first edit (see below), so there is no
+  // one-render "empty field + Save momentarily enabled" flash on load — which the previous
+  // empty-string state + post-render effect-sync produced (and which flaked the save test).
+  const [edited, setEdited] = useState<{ displayName: string; timezone: string } | null>(null);
 
   if (accountQ.isLoading || notifQ.isLoading) {
     return (
@@ -108,9 +104,17 @@ function AccountTab({ onSignOut }: { onSignOut?: () => void }): JSX.Element {
     );
   }
 
-  const dirty = displayName !== account.displayName || timezone !== account.timezone;
+  // Derive the field values from the edit overlay, falling back to the loaded account (pristine).
+  const displayName = edited?.displayName ?? account.displayName;
+  const timezone = edited?.timezone ?? account.timezone;
+  const dirty =
+    edited !== null &&
+    (displayName !== account.displayName || timezone !== account.timezone);
   const save = (): void => {
-    void updateAccount({ displayName: displayName.trim(), timezone });
+    void updateAccount({ displayName: displayName.trim(), timezone })
+      .unwrap()
+      .then(() => setEdited(null)) // back to pristine; the refetched account now holds these values
+      .catch(() => undefined); // mutation error surfaces via updateAccountState; keep the draft
   };
   const setNotif = (key: keyof NotificationPreferenceDto, value: boolean): void => {
     void updateNotifications({ ...notif, [key]: value });
@@ -128,7 +132,7 @@ function AccountTab({ onSignOut }: { onSignOut?: () => void }): JSX.Element {
               value={displayName}
               aria-label="Display name"
               data-testid="account-display-name"
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={(e) => setEdited({ displayName: e.target.value, timezone })}
               style={{
                 fontSize: 18,
                 fontWeight: 700,
@@ -206,7 +210,7 @@ function AccountTab({ onSignOut }: { onSignOut?: () => void }): JSX.Element {
               value={timezone}
               aria-label="Timezone"
               data-testid="account-timezone"
-              onChange={(e) => setTimezone(e.target.value)}
+              onChange={(e) => setEdited({ displayName, timezone: e.target.value })}
               style={{ appearance: 'none', cursor: 'pointer' }}
             >
               {TIMEZONES.map((tz) => (

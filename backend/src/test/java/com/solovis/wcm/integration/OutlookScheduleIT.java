@@ -86,7 +86,8 @@ class OutlookScheduleIT extends AbstractWebIT {
     if (subject != null) {
       map.put("subject", subject);
     }
-    map.put("startDateTime", OffsetDateTime.of(2026, 6, 15, 10, 0, 0, 0, ZoneOffset.ofHours(-5)));
+    // Relative future instant: the service rejects past startDateTimes, so a fixed date would rot.
+    map.put("startDateTime", OffsetDateTime.now(ZoneOffset.ofHours(-5)).plusDays(7).withNano(0));
     if (durationMinutes != null) {
       map.put("durationMinutes", durationMinutes);
     }
@@ -120,6 +121,29 @@ class OutlookScheduleIT extends AbstractWebIT {
     assertThat(cmd.subject()).isEqualTo("Pipeline sync");
     assertThat(cmd.durationMinutes()).isEqualTo(45);
     assertThat(cmd.note()).isEqualTo("agenda: pipeline + blockers");
+  }
+
+  @Test
+  void pastStartDateTimeIsRejected400() throws Exception {
+    // A 1:1 in the past is never intended — the service rejects it before touching the port.
+    Member mgr = manager("pastMgr");
+    connectOutlook(mgr);
+    Member rpt = reportOf(mgr, "pastRpt");
+    int before = stub.scheduledCount();
+
+    Map<String, Object> map = new LinkedHashMap<>();
+    map.put("reportMemberId", rpt.getId());
+    map.put("subject", "Yesterday's sync");
+    map.put("startDateTime", OffsetDateTime.now(ZoneOffset.UTC).minusDays(1));
+    mockMvc
+        .perform(
+            post(SCHEDULE_URL)
+                .with(asManager(mgr))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(map)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("bad_request"));
+    assertThat(stub.scheduledCount()).isEqualTo(before);
   }
 
   @Test

@@ -638,7 +638,8 @@ export const handlers = [
     // Consume the body so spies layered over this handler see the same parsed shape.
     (await request.json()) as ScheduleOutlookEventRequest;
     const body: ScheduleOutlookEventResponse = { eventId: `evt-${uuid()}` };
-    return HttpResponse.json(body, { status: 201 });
+    // The real controller is a plain @PostMapping -> 200 OK (asserted by OutlookScheduleIT).
+    return HttpResponse.json(body, { status: 200 });
   }),
 
   // --- Settings (Account + Notifications) ------------------------------------------------------

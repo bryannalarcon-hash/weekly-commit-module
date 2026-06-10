@@ -1,6 +1,8 @@
 // ScheduleEventRequest — body of POST /api/integration/outlook/schedule (CB-1): a manager
 // scheduling an ad-hoc Outlook event with one of their reports. subject blank -> defaults to
-// "1:1 — <report displayName>"; durationMinutes null -> 30 (service-side defaults).
+// "1:1 — <report displayName>"; durationMinutes null -> 30 (service-side defaults). An optional
+// clientRequestId (per form-open) becomes Graph's transactionId so a retried POST never
+// double-books.
 package com.solovis.wcm.integration.dto;
 
 import jakarta.validation.constraints.Max;
@@ -15,4 +17,5 @@ public record ScheduleEventRequest(
     @Size(max = 200) String subject,
     @NotNull OffsetDateTime startDateTime,
     @Min(15) @Max(240) Integer durationMinutes,
-    @Size(max = 2000) String note) {}
+    @Size(max = 2000) String note,
+    @Size(max = 64) String clientRequestId) {}

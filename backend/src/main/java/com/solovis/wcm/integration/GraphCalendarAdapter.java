@@ -72,8 +72,6 @@ public class GraphCalendarAdapter implements CalendarSyncPort {
             .post()
             .uri("/me/events")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            // transactionId makes the create idempotent on Graph's side across redelivery.
-            .header("transactionId", commit.commitId().toString())
             .contentType(MediaType.APPLICATION_JSON)
             .body(buildEventBody(commit))
             .retrieve()
@@ -111,6 +109,10 @@ public class GraphCalendarAdapter implements CalendarSyncPort {
   /** Build the Graph calendarEvent JSON: subject, start/end window, HTML body with items + link. */
   Map<String, Object> buildEventBody(LockedCommitSync commit) {
     Map<String, Object> event = new LinkedHashMap<>();
+    // Graph's idempotency mechanism is the event resource's transactionId PROPERTY (a header is
+    // ignored): a redelivered commit.locked re-sends the same commitId and Graph returns the
+    // already-created event instead of double-booking.
+    event.put("transactionId", commit.commitId().toString());
     event.put("subject", "Weekly Commit — week of " + commit.weekStart());
     event.put("body", Map.of("contentType", "HTML", "content", htmlBody(commit)));
     // All-day-style window: start at week start, end the day AFTER week end (Graph end is
@@ -127,6 +129,11 @@ public class GraphCalendarAdapter implements CalendarSyncPort {
     OffsetDateTime startUtc = cmd.start().withOffsetSameInstant(ZoneOffset.UTC);
     OffsetDateTime endUtc = startUtc.plusMinutes(cmd.durationMinutes());
     Map<String, Object> event = new LinkedHashMap<>();
+    if (cmd.clientRequestId() != null && !cmd.clientRequestId().isBlank()) {
+      // Per-form-open idempotency: a retried/double-submitted schedule (same clientRequestId)
+      // dedups on Graph's transactionId PROPERTY instead of double-booking.
+      event.put("transactionId", cmd.clientRequestId());
+    }
     event.put("subject", cmd.subject());
     event.put("body", Map.of("contentType", "HTML", "content", scheduledHtmlBody(cmd)));
     event.put("start", dateTime(GRAPH_LOCAL_DATE_TIME.format(startUtc)));

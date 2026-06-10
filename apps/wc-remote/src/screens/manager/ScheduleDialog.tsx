@@ -47,9 +47,15 @@ function toIsoWithOffset(date: string, time: string): string {
 
 /** Map a schedule-mutation failure to user copy; 409 illegal_state = no Outlook link yet. */
 function scheduleErrorMessage(err: unknown): string {
-  const e = err as { status?: number; data?: { code?: string } } | null;
+  const e = err as
+    | { status?: number; data?: { code?: string; detail?: string } }
+    | null;
   if (e?.status === 409 && e.data?.code === 'illegal_state') {
     return 'Connect Outlook in Settings → Integrations first';
+  }
+  if (e?.status === 400 && e.data?.code === 'validation_failed') {
+    // Surface the server's field message (e.g. over-length subject/note, bad duration).
+    return e.data.detail ?? 'Check the form values and try again.';
   }
   return 'Could not schedule the event — try again.';
 }
@@ -70,18 +76,27 @@ export function ScheduleDialog({
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // One idempotency key per dialog OPEN: a network retry / double-submit of this same form dedups
+  // on Graph's side (transactionId), while a fresh open intentionally books a new event.
+  const [clientRequestId] = useState(() => crypto.randomUUID());
 
   const busy = scheduleState.isLoading;
   const valid = subject.trim() !== '' && date !== '' && time !== '';
 
   const submit = (): void => {
     if (busy || !valid) return;
+    // Client-side guard: a 1:1 in the past is never intended — catch it before the network.
+    if (new Date(`${date}T${time}`).getTime() < Date.now() - 60_000) {
+      setError('Pick a future date and time.');
+      return;
+    }
     setError(null);
     void scheduleEvent({
       reportMemberId,
       subject: subject.trim(),
       startDateTime: toIsoWithOffset(date, time),
       durationMinutes,
+      clientRequestId,
       ...(note.trim() !== '' ? { note: note.trim() } : {}),
     })
       .unwrap()
@@ -148,6 +163,8 @@ export function ScheduleDialog({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   disabled={busy}
+                  maxLength={200}
+                  data-autofocus
                   data-testid="schedule-subject"
                 />
               </div>
@@ -164,6 +181,7 @@ export function ScheduleDialog({
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     disabled={busy}
+                    min={new Date().toISOString().slice(0, 10)}
                     data-testid="schedule-date"
                   />
                 </div>
@@ -215,6 +233,7 @@ export function ScheduleDialog({
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Agenda, context, links…"
                   disabled={busy}
+                  maxLength={2000}
                   data-testid="schedule-note"
                   style={{ resize: 'vertical', fontFamily: 'var(--sans)' }}
                 />
