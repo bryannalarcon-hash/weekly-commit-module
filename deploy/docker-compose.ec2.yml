@@ -1,0 +1,49 @@
+# deploy/docker-compose.ec2.yml — the on-instance stack (image-only; no build context ships to the
+# EC2 host). Identical topology to docker-compose.prod.yml — Postgres + backend (demo,e2e, seeded) +
+# nginx frontend on :80 — but it consumes the pre-built wcm-backend / wcm-frontend images that
+# ship-to-ec2.sh loads via `docker save | ssh docker load`. GRAPH_TOKEN_ENC_KEY comes from the .env
+# placed beside this file on the instance.
+services:
+  postgres:
+    image: postgres:16.4
+    container_name: wcm-postgres
+    environment:
+      POSTGRES_DB: wcm
+      POSTGRES_USER: wcm
+      POSTGRES_PASSWORD: wcm
+    volumes:
+      - wcm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wcm -d wcm']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    image: wcm-backend:latest
+    container_name: wcm-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: demo,e2e
+      DB_URL: jdbc:postgresql://postgres:5432/wcm
+      POSTGRES_USER: wcm
+      POSTGRES_PASSWORD: wcm
+      GRAPH_TOKEN_ENC_KEY: ${GRAPH_TOKEN_ENC_KEY}
+    expose:
+      - '8080'
+    restart: unless-stopped
+
+  frontend:
+    image: wcm-frontend:latest
+    container_name: wcm-frontend
+    depends_on:
+      - backend
+    ports:
+      - '80:80'
+    restart: unless-stopped
+
+volumes:
+  wcm-pgdata:

@@ -64,3 +64,9 @@ docs/planning/
 
 # Handoff docs (context-management; per-machine, not for the repo)
 handoff/
+
+# Deploy-time secrets (per-machine, not for the repo)
+deploy/.env
+*.pem
+deploy/.ec2-state
+deploy/.*.pem

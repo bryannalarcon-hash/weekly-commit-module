@@ -1,0 +1,58 @@
+# deploy/docker-compose.prod.yml — the full WCM demo stack on a single host (EC2): Postgres +
+# Spring backend (hermetic demo+e2e profile, auto-seeded) + nginx frontend. The frontend is the only
+# published port (80). Backend talks to postgres over the compose network; nginx proxies /api → it.
+# Build context is the repo root (`docker compose -f deploy/docker-compose.prod.yml ...` from root),
+# or use pre-built images shipped via `docker save | load` (deploy/deploy-ec2.sh) — image names match.
+services:
+  postgres:
+    image: postgres:16.4
+    container_name: wcm-postgres
+    environment:
+      POSTGRES_DB: wcm
+      POSTGRES_USER: wcm
+      POSTGRES_PASSWORD: wcm
+    volumes:
+      - wcm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wcm -d wcm']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    image: wcm-backend:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    container_name: wcm-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Hermetic demo: seeded data + the X-Debug-Member header authenticator (no Auth0 on the public
+      # URL). StubCalendarAdapter is active (no "graph" profile), so Outlook is mocked, not live.
+      SPRING_PROFILES_ACTIVE: demo,e2e
+      DB_URL: jdbc:postgresql://postgres:5432/wcm
+      POSTGRES_USER: wcm
+      POSTGRES_PASSWORD: wcm
+      # Required by the token cipher bean even when the real Graph adapter is inactive.
+      GRAPH_TOKEN_ENC_KEY: ${GRAPH_TOKEN_ENC_KEY}
+    expose:
+      - '8080'
+    restart: unless-stopped
+
+  frontend:
+    image: wcm-frontend:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: wcm-frontend
+    depends_on:
+      - backend
+    ports:
+      - '80:80'
+    restart: unless-stopped
+
+volumes:
+  wcm-pgdata:

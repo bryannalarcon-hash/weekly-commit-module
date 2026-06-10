@@ -1,0 +1,17 @@
+# .dockerignore — keep the Docker build context lean and host-platform artifacts OUT of the image
+# builds (deploy/Dockerfile.backend + deploy/Dockerfile.frontend build from the repo root). Host
+# node_modules / target are platform-specific and must be reinstalled inside the linux builder.
+**/node_modules
+**/dist
+**/.__mf__temp
+backend/target
+.git
+**/*.log
+e2e/node_modules
+e2e/cypress/videos
+e2e/cypress/screenshots
+docs/learn-site/node_modules
+docs/learn-site/dist
+**/.DS_Store
+handoff
+ai-logging/*conversation*.md

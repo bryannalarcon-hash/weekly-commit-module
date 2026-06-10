@@ -1,0 +1,23 @@
+# deploy/Dockerfile.frontend — two-stage image for the federated WCM frontend, served by nginx.
+# Stage 1 (node) installs the workspace and produces TWO Vite builds in HERMETIC DEMO mode
+# (VITE_E2E=true → the X-Debug-Member persona seam, no Auth0): the wc-remote MF bundle under base
+# /remote/ and the host-shell that loads it from /remote/remoteEntry.js. API calls are same-origin
+# (/api). Stage 2 (nginx) serves the host at / and the remote at /remote/, and reverse-proxies
+# /api → the backend container. Build context is the repo ROOT.
+FROM node:20 AS build
+WORKDIR /app
+COPY . .
+# Clean install across the npm workspaces (apps/* + libs/*).
+RUN npm ci || npm install
+# Remote first: base=/remote/ so its lazy-loaded chunks resolve under the /remote/ path nginx serves.
+RUN cd apps/wc-remote && \
+    VITE_E2E=true VITE_API_BASE=/api npx vite build --base=/remote/
+# Host: records the remote's runtime entry URL (same-origin /remote/remoteEntry.js) and the API base.
+RUN cd apps/host-shell && \
+    VITE_E2E=true VITE_API_BASE=/api VITE_REMOTE_ENTRY=/remote/remoteEntry.js npx vite build
+
+FROM nginx:1.27-alpine
+COPY --from=build /app/apps/host-shell/dist /usr/share/nginx/html
+COPY --from=build /app/apps/wc-remote/dist /usr/share/nginx/html/remote
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

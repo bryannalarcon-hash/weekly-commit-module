@@ -1,0 +1,23 @@
+# deploy/Dockerfile.backend — two-stage image for the WCM Spring Boot API (Java 21).
+# Stage 1 builds the fat jar with Maven (gates skipped — they run in CI, not the image build);
+# stage 2 runs it on a slim JRE. Build context is the repo ROOT (so `COPY backend/...` resolves).
+# Runtime config comes from env (SPRING_PROFILES_ACTIVE, DB_URL, POSTGRES_*), set by compose.
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /build
+# Prime the dependency cache on the pom alone so source-only edits don't re-resolve every build.
+COPY backend/pom.xml ./pom.xml
+RUN mvn -q -B -e dependency:go-offline
+COPY backend/src ./src
+COPY backend/spotbugs-exclude.xml ./spotbugs-exclude.xml
+# Package only: tests + Spotless + SpotBugs + JaCoCo are CI gates, not image-build concerns.
+RUN mvn -q -B -DskipTests \
+      -Dspotless.check.skip=true -Dspotbugs.skip=true -Djacoco.skip=true \
+      package
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /build/target/weekly-commit-module-0.0.1-SNAPSHOT.jar ./app.jar
+EXPOSE 8080
+# Container-aware heap + a sane default profile (compose overrides SPRING_PROFILES_ACTIVE).
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=70"
+ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app/app.jar"]
